@@ -1,0 +1,39 @@
+# Binaries
+hyundai-logger
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Dependencies
+vendor/
+
+# Environment files
+.env
+
+# Log files
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with sensitive data (keep config.yaml.example)
+config.yaml

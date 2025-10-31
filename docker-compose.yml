@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # TimescaleDB database
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: hyundai-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hyundai_data
+      POSTGRES_USER: hyundai_logger
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hyundai_logger"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Hyundai Logger application
+  hyundai-logger:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hyundai-logger
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      # Hyundai API credentials
+      HYUNDAI_USERNAME: ${HYUNDAI_USERNAME}
+      HYUNDAI_PASSWORD: ${HYUNDAI_PASSWORD}
+      HYUNDAI_PIN: ${HYUNDAI_PIN}
+      HYUNDAI_BRAND: ${HYUNDAI_BRAND:-hyundai}
+      HYUNDAI_REGION: ${HYUNDAI_REGION:-US}
+
+      # Database connection
+      DB_HOST: timescaledb
+      DB_PORT: 5432
+      DB_USER: hyundai_logger
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: hyundai_data
+      DB_SSLMODE: disable
+
+      # Rate limiting
+      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-5}
+      REQUESTS_PER_HOUR: ${REQUESTS_PER_HOUR:-12}
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+
+  # Optional: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hyundai-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-worldmap-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - timescaledb
+
+volumes:
+  timescaledb-data:
+  grafana-data:

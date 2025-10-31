@@ -1,0 +1,61 @@
+[Unit]
+Description=Hyundai Vehicle Data Logger
+Documentation=https://github.com/darren/hyundai-logger
+After=network-online.target postgresql.service
+Wants=network-online.target
+# If using TimescaleDB container, use:
+# After=network-online.target docker.service
+# Requires=docker.service
+
+[Service]
+Type=simple
+User=hyundai-logger
+Group=hyundai-logger
+WorkingDirectory=/opt/hyundai-logger
+
+# Main executable
+ExecStart=/opt/hyundai-logger/hyundai-logger -config /etc/hyundai-logger/config.yaml
+
+# Environment file for credentials (recommended)
+EnvironmentFile=-/etc/hyundai-logger/.env
+
+# Restart policy - always restart on failure
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+# Resource limits
+MemoryMax=200M
+MemoryHigh=150M
+TasksMax=20
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/
+ReadWritePaths=/var/log/hyundai-logger
+
+# Additional security hardening
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+PrivateDevices=true
+
+# System call filtering (optional - remove if it causes issues)
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallArchitectures=native
+
+# Logging - output to both systemd journal and file
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hyundai-logger
+
+[Install]
+WantedBy=multi-user.target
