@@ -87,13 +87,64 @@ func getBaseURL(region, brand string) string {
 	return "https://api.telematics.hyundaiusa.com"
 }
 
+// doRequest performs an HTTP request with common headers and error handling
+// Does NOT include sensitive data in error messages
+func (c *Client) doRequest(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
+	if err := c.rateLimiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("making request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		// Don't include full body in error (may contain sensitive data)
+		// Only return status code for security
+		return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
+	}
+
+	return respBody, nil
+}
+
+// doRequestWithRetry wraps doRequest with retry logic
+func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
+	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
+		return c.doRequest(ctx, method, endpoint, body)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Safe type assertion with check
+	respBody, ok := result.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type")
+	}
+
+	return respBody, nil
+}
+
 // Authenticate performs authentication with the Hyundai API with retry logic
 func (c *Client) Authenticate(ctx context.Context) error {
 	return c.retrier.Do(ctx, func() error {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return fmt.Errorf("rate limiter: %w", err)
-		}
-
 		// This is a simplified authentication flow
 		// Real implementation would need proper OAuth flow based on region
 		endpoint := fmt.Sprintf("%s/v2/login", c.baseURL)
@@ -102,32 +153,14 @@ func (c *Client) Authenticate(ctx context.Context) error {
 		data.Set("username", c.username)
 		data.Set("password", c.password)
 
-		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(data.Encode()))
+		respBody, err := c.doRequest(ctx, "POST", endpoint, strings.NewReader(data.Encode()))
 		if err != nil {
-			return fmt.Errorf("creating request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("making request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("reading response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("authentication failed (status %d): %s", resp.StatusCode, string(body))
+			return fmt.Errorf("authentication: %w", err)
 		}
 
 		var authResp AuthResponse
-		if err := json.Unmarshal(body, &authResp); err != nil {
-			return fmt.Errorf("parsing response: %w", err)
+		if err := json.Unmarshal(respBody, &authResp); err != nil {
+			return fmt.Errorf("parsing authentication response: %w", err)
 		}
 
 		c.accessToken = authResp.AccessToken
@@ -139,179 +172,67 @@ func (c *Client) Authenticate(ctx context.Context) error {
 
 // GetVehicles retrieves the list of vehicles associated with the account with retry logic
 func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
-	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
+	endpoint := fmt.Sprintf("%s/v2/vehicles", c.baseURL)
 
-		endpoint := fmt.Sprintf("%s/v2/vehicles", c.baseURL)
-
-		req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("creating request: %w", err)
-		}
-
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("making request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("reading response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("get vehicles failed (status %d): %s", resp.StatusCode, string(body))
-		}
-
-		var vehiclesResp VehiclesResponse
-		if err := json.Unmarshal(body, &vehiclesResp); err != nil {
-			return nil, fmt.Errorf("parsing response: %w", err)
-		}
-
-		return vehiclesResp.Vehicles, nil
-	})
-
+	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting vehicles: %w", err)
 	}
 
-	return result.([]Vehicle), nil
+	var vehiclesResp VehiclesResponse
+	if err := json.Unmarshal(respBody, &vehiclesResp); err != nil {
+		return nil, fmt.Errorf("parsing vehicles response: %w", err)
+	}
+
+	return vehiclesResp.Vehicles, nil
 }
 
 // GetVehicleStatus retrieves the current status of a vehicle with retry logic
 func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*VehicleStatus, error) {
-	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
+	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
 
-		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
-
-		req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("creating request: %w", err)
-		}
-
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("making request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("reading response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("get vehicle status failed (status %d): %s", resp.StatusCode, string(body))
-		}
-
-		var status VehicleStatus
-		if err := json.Unmarshal(body, &status); err != nil {
-			return nil, fmt.Errorf("parsing response: %w", err)
-		}
-
-		return &status, nil
-	})
-
+	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting vehicle status: %w", err)
 	}
 
-	return result.(*VehicleStatus), nil
+	var status VehicleStatus
+	if err := json.Unmarshal(respBody, &status); err != nil {
+		return nil, fmt.Errorf("parsing vehicle status response: %w", err)
+	}
+
+	return &status, nil
 }
 
 // GetVehicleLocation retrieves the current location of a vehicle with retry logic
 func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Location, error) {
-	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("rate limiter: %w", err)
-		}
+	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
 
-		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
-
-		req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("creating request: %w", err)
-		}
-
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("making request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("reading response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("get vehicle location failed (status %d): %s", resp.StatusCode, string(body))
-		}
-
-		var location Location
-		if err := json.Unmarshal(body, &location); err != nil {
-			return nil, fmt.Errorf("parsing response: %w", err)
-		}
-
-		return &location, nil
-	})
-
+	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting vehicle location: %w", err)
 	}
 
-	return result.(*Location), nil
+	var location Location
+	if err := json.Unmarshal(respBody, &location); err != nil {
+		return nil, fmt.Errorf("parsing vehicle location response: %w", err)
+	}
+
+	return &location, nil
 }
 
-// GetOdometer retrieves the odometer reading
+// GetOdometer retrieves the odometer reading with retry logic
 func (c *Client) GetOdometer(ctx context.Context, vehicleID string) (*Odometer, error) {
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
-
 	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/odometer", c.baseURL, vehicleID)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("making request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("get odometer failed (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("getting odometer: %w", err)
 	}
 
 	var odometer Odometer
-	if err := json.Unmarshal(body, &odometer); err != nil {
-		return nil, fmt.Errorf("parsing response: %w", err)
+	if err := json.Unmarshal(respBody, &odometer); err != nil {
+		return nil, fmt.Errorf("parsing odometer response: %w", err)
 	}
 
 	return &odometer, nil

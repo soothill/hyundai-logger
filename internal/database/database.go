@@ -8,19 +8,28 @@ package database
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
-	"github.com/soothill/hyundai-logger/internal/api"
+	hyundaiapi "github.com/soothill/hyundai-logger/internal/api"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	influxapi "github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"github.com/influxdata/influxdb-client-go/v2/domain"
 )
 
+var (
+	// vehicleIDRegex validates vehicle IDs to prevent injection
+	vehicleIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+)
+
 // DB represents the InfluxDB database connection
 type DB struct {
-	client influxdb2.Client
-	org    string
-	bucket string
+	client   influxdb2.Client
+	writeAPI influxapi.WriteAPIBlocking
+	org      string
+	bucket   string
 }
 
 // New creates a new InfluxDB connection
@@ -38,10 +47,14 @@ func New(ctx context.Context, url, token, org, bucket string) (*DB, error) {
 		return nil, fmt.Errorf("InfluxDB health check failed: %s", health.Message)
 	}
 
+	// Create write API once for reuse
+	writeAPI := client.WriteAPIBlocking(org, bucket)
+
 	return &DB{
-		client: client,
-		org:    org,
-		bucket: bucket,
+		client:   client,
+		writeAPI: writeAPI,
+		org:      org,
+		bucket:   bucket,
 	}, nil
 }
 
@@ -88,9 +101,7 @@ func (db *DB) InitSchema(ctx context.Context) error {
 
 // UpsertVehicle stores vehicle metadata
 // In InfluxDB, we store this as a measurement with tags for vehicle info
-func (db *DB) UpsertVehicle(ctx context.Context, vehicle api.Vehicle) error {
-	writeAPI := db.client.WriteAPIBlocking(db.org, db.bucket)
-
+func (db *DB) UpsertVehicle(ctx context.Context, vehicle hyundaiapi.Vehicle) error {
 	p := influxdb2.NewPoint("vehicle_info",
 		map[string]string{
 			"vehicle_id": vehicle.VehicleID,
@@ -107,13 +118,11 @@ func (db *DB) UpsertVehicle(ctx context.Context, vehicle api.Vehicle) error {
 		time.Now(),
 	)
 
-	return writeAPI.WritePoint(ctx, p)
+	return db.writeAPI.WritePoint(ctx, p)
 }
 
 // InsertVehicleStatus inserts a vehicle status record
-func (db *DB) InsertVehicleStatus(ctx context.Context, status *api.VehicleStatus) error {
-	writeAPI := db.client.WriteAPIBlocking(db.org, db.bucket)
-
+func (db *DB) InsertVehicleStatus(ctx context.Context, status *hyundaiapi.VehicleStatus) error {
 	// Create multiple points for different aspects of vehicle status
 	points := make([]*write.Point, 0)
 
@@ -219,16 +228,14 @@ func (db *DB) InsertVehicleStatus(ctx context.Context, status *api.VehicleStatus
 	))
 
 	// Write all points
-	return writeAPI.WritePoint(ctx, points...)
+	return db.writeAPI.WritePoint(ctx, points...)
 }
 
 // InsertEVStatus inserts an EV status record
-func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID, vin string, evStatus *api.EVStatus) error {
+func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID, vin string, evStatus *hyundaiapi.EVStatus) error {
 	if evStatus == nil {
 		return nil // Not an EV
 	}
-
-	writeAPI := db.client.WriteAPIBlocking(db.org, db.bucket)
 
 	p := influxdb2.NewPoint("vehicle_ev",
 		map[string]string{
@@ -250,13 +257,11 @@ func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID
 		timestamp,
 	)
 
-	return writeAPI.WritePoint(ctx, p)
+	return db.writeAPI.WritePoint(ctx, p)
 }
 
 // InsertLocation inserts a vehicle location record
-func (db *DB) InsertLocation(ctx context.Context, location *api.Location) error {
-	writeAPI := db.client.WriteAPIBlocking(db.org, db.bucket)
-
+func (db *DB) InsertLocation(ctx context.Context, location *hyundaiapi.Location) error {
 	p := influxdb2.NewPoint("vehicle_location",
 		map[string]string{
 			"vin": location.VIN,
@@ -271,20 +276,39 @@ func (db *DB) InsertLocation(ctx context.Context, location *api.Location) error 
 		location.Timestamp,
 	)
 
-	return writeAPI.WritePoint(ctx, p)
+	return db.writeAPI.WritePoint(ctx, p)
+}
+
+// escapeFluxString escapes special characters for Flux queries
+func escapeFluxString(s string) string {
+	// Escape backslashes and quotes for Flux
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return s
+}
+
+// isValidVehicleID validates a vehicle ID to prevent injection
+func isValidVehicleID(id string) bool {
+	return vehicleIDRegex.MatchString(id)
 }
 
 // GetLatestStatus retrieves the latest status for a vehicle
-func (db *DB) GetLatestStatus(ctx context.Context, vehicleID string) (*api.VehicleStatus, error) {
+func (db *DB) GetLatestStatus(ctx context.Context, vehicleID string) (*hyundaiapi.VehicleStatus, error) {
+	// Validate vehicle ID to prevent injection
+	if !isValidVehicleID(vehicleID) {
+		return nil, fmt.Errorf("invalid vehicle ID format: only alphanumeric characters, hyphens, and underscores allowed")
+	}
+
 	queryAPI := db.client.QueryAPI(db.org)
 
+	// Escape inputs for Flux query
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 		|> range(start: -24h)
 		|> filter(fn: (r) => r["_measurement"] == "vehicle_status")
 		|> filter(fn: (r) => r["vin"] == "%s")
 		|> last()
-	`, db.bucket, vehicleID)
+	`, escapeFluxString(db.bucket), escapeFluxString(vehicleID))
 
 	result, err := queryAPI.Query(ctx, query)
 	if err != nil {
@@ -296,7 +320,7 @@ func (db *DB) GetLatestStatus(ctx context.Context, vehicleID string) (*api.Vehic
 	}
 
 	// Parse result into VehicleStatus (simplified)
-	status := &api.VehicleStatus{}
+	status := &hyundaiapi.VehicleStatus{}
 	if result.Record().Time().Unix() > 0 {
 		status.Timestamp = result.Record().Time()
 	}
