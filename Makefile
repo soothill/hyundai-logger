@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status
+.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -94,7 +94,41 @@ help:
 	@echo "  docker-status  - Show container status"
 	@echo "  docker-clean   - Remove containers and images (keeps data volumes)"
 	@echo ""
+	@echo ""
+	@echo "System Installation:"
+	@echo "  install-logrotate - Install logrotate configuration (requires sudo)"
+	@echo ""
 	@echo "  help          - Show this help message"
+
+# System installation targets
+# Install logrotate configuration
+install-logrotate:
+	@echo "Installing logrotate configuration..."
+	@if [ "$$(id -u)" -ne 0 ]; then \
+		echo ""; \
+		echo "⚠️  This target requires root privileges."; \
+		echo "Please run: sudo make install-logrotate"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "Copying logrotate.conf to /etc/logrotate.d/hyundai-logger..."
+	install -m 0644 logrotate.conf /etc/logrotate.d/hyundai-logger
+	@echo "Validating logrotate configuration..."
+	@logrotate -d /etc/logrotate.d/hyundai-logger 2>&1 | head -n 10 || true
+	@echo ""
+	@echo "✓ Logrotate configuration installed successfully"
+	@echo ""
+	@echo "Configuration details:"
+	@echo "  - Log path:     /var/log/hyundai-logger/*.log"
+	@echo "  - Rotation:     Daily"
+	@echo "  - Retention:    30 days"
+	@echo "  - Max size:     100MB"
+	@echo "  - Compression:  Enabled"
+	@echo ""
+	@echo "Note: Ensure the hyundai-logger user and log directory exist:"
+	@echo "  sudo useradd -r -s /bin/false hyundai-logger"
+	@echo "  sudo mkdir -p /var/log/hyundai-logger"
+	@echo "  sudo chown hyundai-logger:hyundai-logger /var/log/hyundai-logger"
 
 # Docker targets
 # Build Docker image

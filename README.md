@@ -353,6 +353,44 @@ sudo systemctl status hyundai-logger
 sudo journalctl -u hyundai-logger -f
 ```
 
+### Log Rotation
+
+For production deployments, it's recommended to set up log rotation to prevent log files from consuming too much disk space. The project includes a logrotate configuration that can be installed with:
+
+```bash
+# Install logrotate configuration (requires root)
+sudo make install-logrotate
+```
+
+This will install a logrotate configuration with the following settings:
+- **Rotation**: Daily
+- **Retention**: 30 days
+- **Compression**: Enabled (delayed by 1 day)
+- **Max size**: 100MB per file
+- **Log location**: `/var/log/hyundai-logger/*.log`
+
+Before installing logrotate, ensure the log directory and user exist:
+
+```bash
+# Create system user for the logger (if not already created)
+sudo useradd -r -s /bin/false hyundai-logger
+
+# Create log directory
+sudo mkdir -p /var/log/hyundai-logger
+
+# Set ownership
+sudo chown hyundai-logger:hyundai-logger /var/log/hyundai-logger
+```
+
+You can manually test the logrotate configuration with:
+
+```bash
+sudo logrotate -d /etc/logrotate.d/hyundai-logger  # Dry run
+sudo logrotate -f /etc/logrotate.d/hyundai-logger  # Force rotation
+```
+
+**Note:** If you're using Docker deployment, log rotation is handled automatically within the container and this setup is not required.
+
 ## Docker Deployment
 
 The Docker deployment provides a complete, containerized solution with persistent data storage. All configuration and data are kept outside the containers for easy upgrades and backups.
