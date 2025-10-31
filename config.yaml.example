@@ -1,0 +1,97 @@
+# Hyundai Bluelink API Configuration
+hyundai:
+  username: "your-email@example.com"
+  password: "your-password"
+  pin: "1234"
+  brand: "hyundai"  # or "kia"
+  region: "US"      # US, CA, EU, etc.
+
+  # EU regions require stamp authentication
+  # Set to true if you're in EU and have stamp access
+  use_stamps: false
+  stamp_url: ""
+
+# Rate limiting configuration
+rate_limit:
+  # Requests per hour to avoid draining 12V battery
+  requests_per_hour: 12
+
+  # Default polling interval in minutes (used when schedule is disabled)
+  poll_interval_minutes: 5
+
+  # Time-based scheduling for intelligent polling
+  schedule:
+    # Enable time-based scheduling
+    enabled: true
+
+    # Define time periods with different polling intervals
+    periods:
+      # Daytime: Poll every 5 minutes during active hours
+      - name: "daytime"
+        start_hour: 6    # 6:00 AM
+        end_hour: 22     # 10:00 PM
+        interval_minutes: 5
+
+      # Overnight: Poll every 30 minutes during sleeping hours
+      - name: "overnight"
+        start_hour: 22   # 10:00 PM
+        end_hour: 6      # 6:00 AM (next day)
+        interval_minutes: 30
+
+  # Charging detection configuration
+  charging:
+    # Enable faster polling when vehicle is charging
+    enabled: true
+
+    # Poll every 2 minutes when charging is detected
+    # This captures detailed state of charge and charging rate data
+    interval_minutes: 2
+
+# Database configuration (TimescaleDB/PostgreSQL)
+database:
+  host: "localhost"
+  port: 5432
+  user: "hyundai_logger"
+  password: "your-db-password"
+  dbname: "hyundai_data"
+  sslmode: "disable"
+
+# Logging configuration
+logging:
+  level: "info"  # debug, info, warn, error
+  file: "hyundai-logger.log"
+
+# Retry configuration for resilience against network issues
+retry:
+  # Maximum number of retry attempts for failed API calls
+  max_attempts: 5
+
+  # Initial delay in milliseconds before first retry
+  initial_delay_ms: 1000
+
+  # Maximum delay in milliseconds between retries
+  max_delay_ms: 60000
+
+  # Multiplier for exponential backoff (delay doubles each retry)
+  backoff_multiplier: 2.0
+
+# Email alerts for persistent problems
+alerts:
+  # Enable email notifications
+  enabled: false
+
+  # SMTP server configuration
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_username: "your-email@gmail.com"
+  smtp_password: "your-app-password"
+
+  # Email addresses
+  from_email: "hyundai-logger@yourdomain.com"
+  to_email: "admin@yourdomain.com"
+
+  # Number of consecutive failures before sending alert
+  alert_threshold: 10
+
+  # Minutes to wait before sending another alert (prevents spam)
+  alert_cooldown_mins: 60

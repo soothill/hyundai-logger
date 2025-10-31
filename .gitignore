@@ -1,5 +1,6 @@
-# Binaries
-hyundai-logger
+# Binaries (ignore executable in root, not the directory)
+/hyundai-logger
+hyundai-logger-*
 *.exe
 *.exe~
 *.dll
