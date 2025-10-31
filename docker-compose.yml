@@ -1,21 +1,26 @@
 version: '3.8'
 
 services:
-  # TimescaleDB database
-  timescaledb:
-    image: timescale/timescaledb:latest-pg14
-    container_name: hyundai-timescaledb
+  # InfluxDB v2 database
+  influxdb:
+    image: influxdb:2.7
+    container_name: hyundai-influxdb
     restart: unless-stopped
     environment:
-      POSTGRES_DB: hyundai_data
-      POSTGRES_USER: hyundai_logger
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-changeme123}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-hyundai}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-vehicle_data}
+      DOCKER_INFLUXDB_INIT_RETENTION: 90d
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-changeme-token-12345}
     ports:
-      - "5432:5432"
+      - "8086:8086"
     volumes:
-      - timescaledb-data:/var/lib/postgresql/data
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hyundai_logger"]
+      test: ["CMD", "influx", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,7 +33,7 @@ services:
     container_name: hyundai-logger
     restart: unless-stopped
     depends_on:
-      timescaledb:
+      influxdb:
         condition: service_healthy
     environment:
       # Hyundai API credentials
@@ -38,13 +43,11 @@ services:
       HYUNDAI_BRAND: ${HYUNDAI_BRAND:-hyundai}
       HYUNDAI_REGION: ${HYUNDAI_REGION:-US}
 
-      # Database connection
-      DB_HOST: timescaledb
-      DB_PORT: 5432
-      DB_USER: hyundai_logger
-      DB_PASSWORD: ${DB_PASSWORD:-changeme}
-      DB_NAME: hyundai_data
-      DB_SSLMODE: disable
+      # InfluxDB connection
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN:-changeme-token-12345}
+      INFLUXDB_ORG: ${INFLUXDB_ORG:-hyundai}
+      INFLUXDB_BUCKET: ${INFLUXDB_BUCKET:-vehicle_data}
 
       # Rate limiting
       POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-5}
@@ -68,8 +71,9 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
-      - timescaledb
+      - influxdb
 
 volumes:
-  timescaledb-data:
+  influxdb-data:
+  influxdb-config:
   grafana-data:

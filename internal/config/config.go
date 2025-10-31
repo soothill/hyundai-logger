@@ -71,12 +71,10 @@ func (c *ChargingConfig) GetIntervalMinutes() int {
 }
 
 type DatabaseConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	User     string `yaml:"user"`
-	Password string `yaml:"password"`
-	DBName   string `yaml:"dbname"`
-	SSLMode  string `yaml:"sslmode"`
+	URL          string `yaml:"url"`
+	Token        string `yaml:"token"`
+	Organization string `yaml:"organization"`
+	Bucket       string `yaml:"bucket"`
 }
 
 type LoggingConfig struct {
@@ -139,25 +137,17 @@ func Load(configPath string) (*Config, error) {
 		cfg.Hyundai.Region = val
 	}
 
-	if val := os.Getenv("DB_HOST"); val != "" {
-		cfg.Database.Host = val
+	if val := os.Getenv("INFLUXDB_URL"); val != "" {
+		cfg.Database.URL = val
 	}
-	if val := os.Getenv("DB_PORT"); val != "" {
-		if port, err := strconv.Atoi(val); err == nil {
-			cfg.Database.Port = port
-		}
+	if val := os.Getenv("INFLUXDB_TOKEN"); val != "" {
+		cfg.Database.Token = val
 	}
-	if val := os.Getenv("DB_USER"); val != "" {
-		cfg.Database.User = val
+	if val := os.Getenv("INFLUXDB_ORG"); val != "" {
+		cfg.Database.Organization = val
 	}
-	if val := os.Getenv("DB_PASSWORD"); val != "" {
-		cfg.Database.Password = val
-	}
-	if val := os.Getenv("DB_NAME"); val != "" {
-		cfg.Database.DBName = val
-	}
-	if val := os.Getenv("DB_SSLMODE"); val != "" {
-		cfg.Database.SSLMode = val
+	if val := os.Getenv("INFLUXDB_BUCKET"); val != "" {
+		cfg.Database.Bucket = val
 	}
 
 	if val := os.Getenv("POLL_INTERVAL_MINUTES"); val != "" {
@@ -197,14 +187,17 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("hyundai region is required")
 	}
 
-	if c.Database.Host == "" {
-		return fmt.Errorf("database host is required")
+	if c.Database.URL == "" {
+		return fmt.Errorf("database url is required")
 	}
-	if c.Database.User == "" {
-		return fmt.Errorf("database user is required")
+	if c.Database.Token == "" {
+		return fmt.Errorf("database token is required")
 	}
-	if c.Database.DBName == "" {
-		return fmt.Errorf("database name is required")
+	if c.Database.Organization == "" {
+		return fmt.Errorf("database organization is required")
+	}
+	if c.Database.Bucket == "" {
+		return fmt.Errorf("database bucket is required")
 	}
 
 	if c.RateLimit.PollIntervalMinutes <= 0 {
@@ -307,10 +300,3 @@ func (r *RateLimitConfig) isHourInPeriod(hour, start, end int) bool {
 	return hour >= start || hour < end
 }
 
-// GetConnectionString returns PostgreSQL connection string
-func (c *DatabaseConfig) GetConnectionString() string {
-	return fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode,
-	)
-}

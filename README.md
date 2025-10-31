@@ -1,10 +1,14 @@
 # Hyundai Logger
 
-A Go application that connects to the Hyundai Bluelink API to log vehicle data into a TimescaleDB time-series database. This tool respects API rate limits to avoid draining your vehicle's 12V battery.
+A Go application that connects to the Hyundai Bluelink API to log vehicle data into an InfluxDB v2 time-series database. This tool respects API rate limits to avoid draining your vehicle's 12V battery and includes intelligent polling features.
 
 ## Features
 
 - Connects to Hyundai Bluelink API (US, CA, EU regions supported)
+- Intelligent time-based polling with configurable schedules (less frequent overnight)
+- Enhanced charging detection with increased polling frequency when vehicle is charging
+- Exponential backoff retry logic for resilience to network interruptions
+- Email alerting for extended problem periods
 - Rate limiting to protect vehicle battery (configurable requests per hour)
 - Logs comprehensive vehicle data:
   - Engine status and range
@@ -15,18 +19,122 @@ A Go application that connects to the Hyundai Bluelink API to log vehicle data i
   - Fuel level and odometer
   - EV-specific data (battery level, charging status, range)
   - GPS location tracking
-- TimescaleDB integration for efficient time-series data storage
-- Automatic hypertable creation for optimal performance
+- InfluxDB v2 integration for efficient time-series data storage
+- Automatic bucket creation with 90-day retention policy
 - Graceful shutdown handling
 - Configuration via YAML file or environment variables
+- Docker Compose setup for easy deployment
 
 ## Prerequisites
 
-- Go 1.21 or higher
-- PostgreSQL 12+ with TimescaleDB extension
+- Go 1.23 or higher
+- InfluxDB v2 (2.7 or higher recommended)
 - Hyundai Bluelink account with valid credentials
 
+## ⚠️ IMPORTANT WARNING: 12V Battery Drain
+
+**EXCESSIVE POLLING CAN DRAIN YOUR VEHICLE'S 12V BATTERY!**
+
+Every time this application polls your vehicle's status, it wakes up the vehicle's telematics system, which draws power from the 12V battery. **Too frequent polling can drain your battery** and leave you stranded with a dead battery.
+
+### Safe Polling Guidelines:
+
+✅ **SAFE (Recommended):**
+- **12 requests per hour** (every 5 minutes) - Default setting
+- **24 requests per hour** (every 2.5 minutes) - Acceptable for short periods
+
+⚠️ **RISKY:**
+- **60 requests per hour** (every minute) - Use sparingly and only when actively monitoring
+- **During charging:** 30 requests per hour (every 2 minutes) - Enabled automatically by charging detection
+
+❌ **DANGEROUS:**
+- **More than 60 requests per hour** - Can significantly drain battery
+- **Continuous rapid polling** - Will drain battery quickly
+
+### Battery Protection Features:
+
+This application includes several features to protect your battery:
+- **Default conservative rate limits** (12 requests/hour)
+- **Intelligent overnight polling** (reduced frequency during sleeping hours)
+- **Configurable time-based schedules** (different rates for different times)
+- **Charging detection** (faster polling only when vehicle is charging)
+
+### If Your Battery Drains:
+
+If you experience 12V battery issues:
+1. **Immediately reduce polling frequency** in config.yaml
+2. Jump-start or charge your vehicle's 12V battery
+3. Consider using **12 requests/hour maximum** going forward
+4. Use intelligent scheduling to reduce overnight polling
+
+**You have been warned!** The developers are not responsible for any battery drain or vehicle issues caused by excessive polling. Use conservative settings and monitor your battery health.
+
+## Quick Docker Deployment
+
+The easiest way to deploy Hyundai Logger is using Docker with persistent volumes for data and configuration:
+
+```bash
+# Clone the repository
+git clone https://github.com/soothill/hyundai-logger.git
+cd hyundai-logger
+
+# Configure credentials
+cp .env.example .env
+nano .env  # Edit with your Hyundai credentials
+
+# Deploy everything (InfluxDB + Logger + Grafana)
+make docker-deploy
+```
+
+That's it! All data is stored in Docker volumes, and configuration files remain on your host for easy editing.
+
+**Upgrading is simple:**
+```bash
+# Pull latest code
+git pull
+
+# Rebuild and restart (data is preserved)
+make docker-deploy
+```
+
+**Useful commands:**
+- `make docker-logs` - View application logs
+- `make docker-status` - Check container status
+- `make docker-stop` - Stop all services
+- `make docker-restart` - Restart services
+
+See the [Docker Deployment](#docker-deployment) section below for more details.
+
 ## Installation
+
+### Option 1: Docker Compose (Recommended)
+
+1. Clone or download this project:
+
+```bash
+cd hyundai-logger
+```
+
+2. Configure the application:
+
+```bash
+cp .env.example .env
+# Edit .env with your credentials and generate a secure token
+```
+
+3. Start the services:
+
+```bash
+docker-compose up -d
+```
+
+This will automatically:
+- Start InfluxDB v2 with initial setup
+- Create the organization and bucket with 90-day retention
+- Build and run the Hyundai Logger
+- Set up Grafana for visualization (optional)
+
+### Option 2: Manual Installation
 
 1. Clone or download this project:
 
@@ -37,32 +145,34 @@ cd hyundai-logger
 2. Install dependencies:
 
 ```bash
-go mod download
+make install
+# or: go mod download
 ```
 
-3. Set up PostgreSQL with TimescaleDB:
+3. Set up InfluxDB v2:
 
 ```bash
-# Install TimescaleDB (Ubuntu/Debian example)
-sudo apt-get install timescaledb-postgresql-14
+# Install InfluxDB v2 (Ubuntu/Debian example)
+wget https://dl.influxdata.com/influxdb/releases/influxdb2-2.7.0-amd64.deb
+sudo dpkg -i influxdb2-2.7.0-amd64.deb
+sudo systemctl start influxdb
 
-# Create database and user
-sudo -u postgres psql
-```
-
-```sql
-CREATE DATABASE hyundai_data;
-CREATE USER hyundai_logger WITH PASSWORD 'your-secure-password';
-GRANT ALL PRIVILEGES ON DATABASE hyundai_data TO hyundai_logger;
-\c hyundai_data
-CREATE EXTENSION IF NOT EXISTS timescaledb;
+# Set up initial user and organization via web UI at http://localhost:8086
+# Or use the CLI:
+influx setup \
+  --username admin \
+  --password changeme123 \
+  --org hyundai \
+  --bucket vehicle_data \
+  --retention 90d \
+  --force
 ```
 
 4. Configure the application:
 
 ```bash
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your Hyundai and InfluxDB credentials
 ```
 
 Or edit `config.yaml` with your settings.
@@ -70,10 +180,46 @@ Or edit `config.yaml` with your settings.
 5. Initialize the database schema:
 
 ```bash
-go run cmd/hyundai-logger/main.go -init-db
+make init-db
+# or: ./scripts/init-influxdb.sh
+# or: go run cmd/hyundai-logger/main.go -init-db
 ```
 
 ## Configuration
+
+### Understanding Your Credentials
+
+Before configuring the application, you need to gather the following information:
+
+#### Username and Password
+Use the same email address and password you use to log into the Hyundai Bluelink or Kia Connect mobile app.
+
+#### PIN
+This is your **4-digit PIN** used for remote commands in the mobile app (like remote start or door lock/unlock).
+
+**Where to find or set your PIN:**
+1. Open the Hyundai Bluelink (myHyundai) or Kia Connect mobile app
+2. Navigate to: **Settings → Profile → Change PIN** (or similar path depending on app version)
+3. If you haven't set a PIN yet, the app will prompt you to create one
+4. Use this same 4-digit PIN in the configuration
+
+**Note:** This is NOT your vehicle's ignition security PIN - it's the app-specific remote services PIN.
+
+#### Brand
+Set to either:
+- `hyundai` - for Hyundai vehicles
+- `kia` - for Kia vehicles
+
+#### Region
+Choose the region where your Bluelink/Connect account was registered:
+
+| Region Code | Description | Service Name |
+|-------------|-------------|--------------|
+| `US` | United States | myHyundai |
+| `CA` | Canada | myHyundai |
+| `EU` | Europe | Bluelink |
+
+**Important:** Use the region where you **created your account**, not necessarily where you are currently located. For example, if you registered your account in the US but are temporarily in Canada, use `US`.
 
 ### Using config.yaml
 
@@ -91,12 +237,37 @@ rate_limit:
   requests_per_hour: 12  # Recommended: 12-24 per hour
   poll_interval_minutes: 5
 
+  # Intelligent time-based scheduling
+  periods:
+    - start_hour: 6
+      end_hour: 22
+      interval_minutes: 5
+    - start_hour: 22
+      end_hour: 6
+      interval_minutes: 15
+
+  # Enhanced charging detection
+  charging_config:
+    enabled: true
+    interval_minutes: 2
+
 database:
-  host: "localhost"
-  port: 5432
-  user: "hyundai_logger"
-  password: "your-db-password"
-  dbname: "hyundai_data"
+  url: "http://localhost:8086"
+  token: "your-influxdb-token"
+  organization: "hyundai"
+  bucket: "vehicle_data"
+
+# Optional: Email alerts for persistent errors
+alerts:
+  enabled: false
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_username: "your-email@example.com"
+  smtp_password: "your-app-password"
+  from_email: "your-email@example.com"
+  to_email: "alerts@example.com"
+  alert_threshold: 5
+  alert_cooldown_mins: 60
 ```
 
 ### Using Environment Variables
@@ -104,12 +275,22 @@ database:
 Environment variables take precedence over config.yaml:
 
 ```bash
+# Hyundai Bluelink credentials
 export HYUNDAI_USERNAME="your-email@example.com"
 export HYUNDAI_PASSWORD="your-password"
 export HYUNDAI_PIN="1234"
 export HYUNDAI_BRAND="hyundai"
 export HYUNDAI_REGION="US"
-export DB_PASSWORD="your-db-password"
+
+# InfluxDB connection
+export INFLUXDB_URL="http://localhost:8086"
+export INFLUXDB_TOKEN="your-influxdb-token"
+export INFLUXDB_ORG="hyundai"
+export INFLUXDB_BUCKET="vehicle_data"
+
+# Rate limiting
+export POLL_INTERVAL_MINUTES="5"
+export REQUESTS_PER_HOUR="12"
 ```
 
 ## Usage
@@ -117,20 +298,28 @@ export DB_PASSWORD="your-db-password"
 ### Initialize Database (First Time Only)
 
 ```bash
+# Using the initialization script
+./scripts/init-influxdb.sh
+
+# Or using make
+make init-db
+
+# Or using go run
 go run cmd/hyundai-logger/main.go -init-db
 ```
 
 ### Run the Logger
 
 ```bash
-go run cmd/hyundai-logger/main.go
-```
+# Using make
+make run
 
-Or build and run:
-
-```bash
-go build -o hyundai-logger cmd/hyundai-logger/main.go
+# Or build and run
+make build
 ./hyundai-logger
+
+# Or using go run
+go run cmd/hyundai-logger/main.go
 ```
 
 ### Run as a Service (systemd)
@@ -140,12 +329,13 @@ Create `/etc/systemd/system/hyundai-logger.service`:
 ```ini
 [Unit]
 Description=Hyundai Vehicle Data Logger
-After=network.target postgresql.service
+After=network.target influxdb.service
 
 [Service]
 Type=simple
 User=your-user
 WorkingDirectory=/path/to/hyundai-logger
+EnvironmentFile=/path/to/hyundai-logger/.env
 ExecStart=/path/to/hyundai-logger/hyundai-logger
 Restart=always
 RestartSec=10
@@ -160,81 +350,304 @@ Enable and start:
 sudo systemctl enable hyundai-logger
 sudo systemctl start hyundai-logger
 sudo systemctl status hyundai-logger
+sudo journalctl -u hyundai-logger -f
+```
+
+## Docker Deployment
+
+The Docker deployment provides a complete, containerized solution with persistent data storage. All configuration and data are kept outside the containers for easy upgrades and backups.
+
+### Architecture
+
+The Docker Compose setup includes:
+- **InfluxDB v2** - Time-series database with automatic initialization
+- **Hyundai Logger** - The main application
+- **Grafana** - Optional visualization dashboard
+
+### Data Persistence
+
+All data is stored in Docker volumes and host-mounted directories:
+
+**Docker Volumes (managed by Docker):**
+- `influxdb-data` - InfluxDB database files
+- `influxdb-config` - InfluxDB configuration
+- `grafana-data` - Grafana dashboards and settings
+
+**Host-Mounted Files:**
+- `.env` - Credentials (mounted read-only)
+- `config.yaml` - Application configuration (mounted read-only)
+- `./logs/` - Application logs (read/write)
+
+This design allows you to:
+- **Upgrade easily** - Just rebuild the containers, data is preserved
+- **Edit configuration** - Modify .env or config.yaml on the host, restart to apply
+- **Backup easily** - Back up Docker volumes and host files
+- **Migrate easily** - Move volumes and config files to another machine
+
+### Make Commands
+
+```bash
+# Build Docker image
+make docker-build
+
+# Deploy all services (builds and starts containers)
+make docker-deploy
+
+# View logs (follows application logs)
+make docker-logs
+
+# Check status of all containers
+make docker-status
+
+# Stop all containers (data preserved)
+make docker-stop
+
+# Restart all containers
+make docker-restart
+
+# Clean up containers and images (keeps data volumes)
+make docker-clean
+```
+
+### Manual Docker Commands
+
+If you prefer not to use Make:
+
+```bash
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f hyundai-logger
+
+# Stop services
+docker-compose down
+
+# Rebuild and restart
+docker-compose up -d --build
+
+# View all logs
+docker-compose logs -f
+
+# Remove everything including volumes (DANGER: deletes all data!)
+docker-compose down -v
+```
+
+### Accessing Services
+
+Once deployed:
+- **InfluxDB UI**: http://localhost:8086
+  - Organization: `hyundai` (or from INFLUXDB_ORG)
+  - Bucket: `vehicle_data` (or from INFLUXDB_BUCKET)
+  - Token: From your INFLUXDB_TOKEN in .env
+
+- **Grafana**: http://localhost:3000
+  - Default credentials: `admin` / `admin`
+  - Change password on first login
+
+### Upgrading
+
+To upgrade to a new version:
+
+```bash
+# Stop current containers
+make docker-stop
+
+# Pull latest code
+git pull
+
+# Rebuild and start (data is preserved in volumes)
+make docker-deploy
+```
+
+Your data in InfluxDB volumes is automatically preserved during upgrades.
+
+### Backup and Restore
+
+**Backup Docker volumes:**
+```bash
+# Create backup directory
+mkdir -p backups
+
+# Backup InfluxDB data
+docker run --rm -v hyundai-logger_influxdb-data:/data -v $(pwd)/backups:/backup alpine tar czf /backup/influxdb-backup.tar.gz -C /data .
+
+# Backup configuration files
+tar czf backups/config-backup.tar.gz .env config.yaml
+```
+
+**Restore from backup:**
+```bash
+# Stop containers
+make docker-stop
+
+# Restore InfluxDB volume
+docker run --rm -v hyundai-logger_influxdb-data:/data -v $(pwd)/backups:/backup alpine sh -c "cd /data && tar xzf /backup/influxdb-backup.tar.gz"
+
+# Restore configuration
+tar xzf backups/config-backup.tar.gz
+
+# Start containers
+make docker-deploy
+```
+
+### Troubleshooting Docker Deployment
+
+**Container won't start:**
+```bash
+# Check logs for errors
+make docker-logs
+
+# Check all container logs
+docker-compose logs
+
+# Verify .env file exists and has valid credentials
+cat .env
+```
+
+**InfluxDB initialization fails:**
+```bash
+# Check InfluxDB logs
+docker-compose logs influxdb
+
+# Verify environment variables
+docker-compose config
+```
+
+**Can't connect to InfluxDB:**
+```bash
+# Verify InfluxDB is running
+docker-compose ps
+
+# Check InfluxDB health
+curl http://localhost:8086/health
+
+# Restart InfluxDB
+docker-compose restart influxdb
 ```
 
 ## Database Schema
 
-The application creates the following tables:
+The application stores data in InfluxDB v2 with the following measurements:
 
-### `vehicles`
-Stores vehicle information (make, model, VIN, etc.)
+### `vehicle_info`
+Vehicle metadata (make, model, VIN, nickname, year, color)
 
-### `vehicle_status` (Hypertable)
-Time-series data for:
-- Engine status
-- Climate control
-- Door locks
-- Battery voltage
-- Tire pressure
-- Fuel level
-- Odometer readings
+### `vehicle_engine`
+Engine-related metrics:
+- Running state, remote start status
+- RPM, range (km and miles)
 
-### `ev_status` (Hypertable)
-EV-specific time-series data:
-- Battery level and capacity
-- Charging status and power
-- Estimated range
-- Charge completion time
+### `vehicle_climate`
+Climate control data:
+- Active state, temperatures (interior, exterior, target)
+- Air condition, heater, auto mode, fan speed
 
-### `vehicle_location` (Hypertable)
+### `vehicle_doors`
+Door and lock status:
+- Locked state
+- Individual door status (front/back, left/right)
+- Trunk and hood status
+
+### `vehicle_battery`
+12V battery data:
+- Battery level and voltage
+- Charge time, warning lights
+
+### `vehicle_tires`
+Tire pressure monitoring:
+- PSI for each tire (front/rear, left/right)
+- Status for each tire
+- Warning lights
+
+### `vehicle_status`
+General vehicle metrics:
+- Odometer, fuel level
+- Defrost, steering wheel heat
+- Side mirror heat, rear window heat
+- Washer fluid level and warnings
+
+### `vehicle_ev`
+EV-specific time-series data (for electric/hybrid vehicles):
+- Battery level, capacity, charging state
+- Charging power, estimated charge times
+- EV range (km and miles)
+- Plugged-in status, charge target percentage
+
+### `vehicle_location`
 GPS location history:
-- Latitude/longitude
-- Altitude
+- Latitude, longitude, altitude
 - Speed and heading
 
 ## Querying Data
 
+InfluxDB v2 uses Flux query language. Access the InfluxDB UI at `http://localhost:8086` or use the CLI/API.
+
 ### Get latest vehicle status
 
-```sql
-SELECT * FROM vehicle_status
-WHERE vehicle_id = 'YOUR_VEHICLE_ID'
-ORDER BY time DESC
-LIMIT 1;
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -24h)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> last()
 ```
 
-### Get battery level over time
+### Get EV battery level over time
 
-```sql
-SELECT time, battery_level
-FROM ev_status
-WHERE vehicle_id = 'YOUR_VEHICLE_ID'
-  AND time > NOW() - INTERVAL '7 days'
-ORDER BY time;
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_ev")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> filter(fn: (r) => r["_field"] == "battery_level")
+  |> yield(name: "battery_level")
 ```
 
-### Get average fuel consumption
+### Get charging sessions
 
-```sql
-SELECT
-  time_bucket('1 day', time) AS day,
-  AVG(fuel_level) as avg_fuel_level,
-  MAX(odometer) - MIN(odometer) as distance
-FROM vehicle_status
-WHERE vehicle_id = 'YOUR_VEHICLE_ID'
-  AND time > NOW() - INTERVAL '30 days'
-GROUP BY day
-ORDER BY day;
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_ev")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> filter(fn: (r) => r["_field"] == "charging" or r["_field"] == "battery_level")
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> filter(fn: (r) => r.charging == true)
+```
+
+### Get average fuel level by day
+
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -30d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_status")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> filter(fn: (r) => r["_field"] == "fuel_level")
+  |> aggregateWindow(every: 1d, fn: mean, createEmpty: false)
+  |> yield(name: "daily_avg_fuel")
 ```
 
 ### Track vehicle location history
 
-```sql
-SELECT time, latitude, longitude, speed
-FROM vehicle_location
-WHERE vehicle_id = 'YOUR_VEHICLE_ID'
-  AND time > NOW() - INTERVAL '1 day'
-ORDER BY time;
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -1d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_location")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> filter(fn: (r) => r["_field"] == "latitude" or r["_field"] == "longitude" or r["_field"] == "speed")
+  |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
+```
+
+### Monitor tire pressure trends
+
+```flux
+from(bucket: "vehicle_data")
+  |> range(start: -7d)
+  |> filter(fn: (r) => r["_measurement"] == "vehicle_tires")
+  |> filter(fn: (r) => r["vin"] == "YOUR_VIN")
+  |> filter(fn: (r) => r["_field"] =~ /psi$/)
+  |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
 ```
 
 ## Rate Limiting
@@ -270,9 +683,11 @@ Access tokens are obtained during each startup. For production use, consider imp
 
 ### Database Connection Issues
 
-1. Verify PostgreSQL is running: `sudo systemctl status postgresql`
-2. Test connection: `psql -h localhost -U hyundai_logger -d hyundai_data`
-3. Check TimescaleDB extension: `SELECT * FROM pg_extension WHERE extname = 'timescaledb';`
+1. Verify InfluxDB is running: `sudo systemctl status influxdb`
+2. Check InfluxDB health: `curl http://localhost:8086/health`
+3. Test connection with CLI: `influx ping --host http://localhost:8086`
+4. Verify organization and bucket exist via web UI: http://localhost:8086
+5. Check token permissions in InfluxDB UI (must have write access to bucket)
 
 ### No Data Being Logged
 

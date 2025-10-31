@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
 
@@ -37,5 +37,7 @@ RUN addgroup -g 1000 appuser && \
 
 USER appuser
 
-# Initialize database on first run, then start the logger
-CMD ["sh", "-c", "./hyundai-logger -init-db && ./hyundai-logger"]
+# Run the logger
+# Note: InfluxDB bucket is auto-created by docker-compose DOCKER_INFLUXDB_INIT_* variables
+# For manual deployments, run with -init-db flag once: docker run ... hyundai-logger -init-db
+CMD ["./hyundai-logger"]

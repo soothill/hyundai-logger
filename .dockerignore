@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+
+# Environment and config with secrets
+.env
+config.yaml
+
+# Build artifacts
+hyundai-logger
+hyundai-logger-*
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Test files
+*_test.go
+*.test
+testdata/
+
+# Temporary files
+tmp/
+temp/

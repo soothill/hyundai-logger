@@ -73,8 +73,8 @@ func main() {
 	defer cancel()
 
 	// Connect to database
-	logger.Info("Connecting to database at %s:%d...", cfg.Database.Host, cfg.Database.Port)
-	db, err := database.New(ctx, cfg.Database.GetConnectionString())
+	logger.Info("Connecting to InfluxDB at %s...", cfg.Database.URL)
+	db, err := database.New(ctx, cfg.Database.URL, cfg.Database.Token, cfg.Database.Organization, cfg.Database.Bucket)
 	if err != nil {
 		logger.Fatal("Failed to connect to database: %v", err)
 	}

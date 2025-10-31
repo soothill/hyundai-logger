@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db clean test install
+.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -73,13 +73,122 @@ help:
 	@echo "==============================================="
 	@echo ""
 	@echo "Available targets:"
-	@echo "  build      - Build the application"
-	@echo "  run        - Run the application"
-	@echo "  init-db    - Initialize the database schema"
-	@echo "  clean      - Remove build artifacts"
-	@echo "  test       - Run tests"
-	@echo "  install    - Install dependencies"
-	@echo "  fmt        - Format code"
-	@echo "  lint       - Run linter"
-	@echo "  build-all  - Build for multiple platforms"
-	@echo "  help       - Show this help message"
+	@echo ""
+	@echo "Build & Run:"
+	@echo "  build         - Build the application"
+	@echo "  run           - Run the application"
+	@echo "  init-db       - Initialize the database schema"
+	@echo "  clean         - Remove build artifacts"
+	@echo "  test          - Run tests"
+	@echo "  install       - Install dependencies"
+	@echo "  fmt           - Format code"
+	@echo "  lint          - Run linter"
+	@echo "  build-all     - Build for multiple platforms"
+	@echo ""
+	@echo "Docker Deployment:"
+	@echo "  docker-build   - Build Docker image"
+	@echo "  docker-deploy  - Deploy with docker-compose (data persisted in volumes)"
+	@echo "  docker-stop    - Stop all containers"
+	@echo "  docker-restart - Restart all containers"
+	@echo "  docker-logs    - View container logs"
+	@echo "  docker-status  - Show container status"
+	@echo "  docker-clean   - Remove containers and images (keeps data volumes)"
+	@echo ""
+	@echo "  help          - Show this help message"
+
+# Docker targets
+# Build Docker image
+docker-build:
+	@echo "Building Docker image..."
+	docker build -t hyundai-logger:latest .
+	@echo "Docker image built successfully"
+
+# Deploy with docker-compose (data and config externalized)
+docker-deploy:
+	@echo "Deploying Hyundai Logger with Docker Compose..."
+	@echo ""
+	@if [ ! -f .env ]; then \
+		echo "⚠️  WARNING: .env file not found!"; \
+		echo "Creating .env from .env.example..."; \
+		cp .env.example .env; \
+		echo ""; \
+		echo "Please edit .env with your credentials before continuing."; \
+		echo "Run 'nano .env' to edit the file."; \
+		exit 1; \
+	fi
+	@echo "✓ Configuration file found"
+	@echo ""
+	@echo "Starting services..."
+	docker-compose up -d --build
+	@echo ""
+	@echo "==============================================="
+	@echo "  Deployment Complete!"
+	@echo "==============================================="
+	@echo ""
+	@echo "Services running:"
+	@echo "  - InfluxDB UI:  http://localhost:8086"
+	@echo "  - Grafana:      http://localhost:3000 (admin/admin)"
+	@echo ""
+	@echo "Data volumes (persistent):"
+	@echo "  - influxdb-data:   InfluxDB database"
+	@echo "  - influxdb-config: InfluxDB configuration"
+	@echo "  - grafana-data:    Grafana dashboards"
+	@echo ""
+	@echo "Configuration files (on host):"
+	@echo "  - .env:         Credentials (mounted read-only)"
+	@echo "  - config.yaml:  App configuration (mounted read-only)"
+	@echo "  - ./logs:       Application logs"
+	@echo ""
+	@echo "Useful commands:"
+	@echo "  make docker-logs     - View logs"
+	@echo "  make docker-status   - Check status"
+	@echo "  make docker-stop     - Stop services"
+	@echo "  make docker-restart  - Restart services"
+
+# Stop all containers
+docker-stop:
+	@echo "Stopping containers..."
+	docker-compose down
+	@echo "Containers stopped (data volumes preserved)"
+
+# Restart all containers
+docker-restart:
+	@echo "Restarting containers..."
+	docker-compose restart
+	@echo "Containers restarted"
+
+# View container logs
+docker-logs:
+	@echo "Showing logs (Ctrl+C to exit)..."
+	@echo ""
+	docker-compose logs -f hyundai-logger
+
+# Show container status
+docker-status:
+	@echo "Container status:"
+	@echo ""
+	docker-compose ps
+	@echo ""
+	@echo "Docker volumes:"
+	docker volume ls | grep hyundai
+
+# Clean up containers and images (preserve data volumes)
+docker-clean:
+	@echo "⚠️  This will remove containers and images but preserve data volumes."
+	@read -p "Continue? [y/N] " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		echo "Stopping and removing containers..."; \
+		docker-compose down; \
+		echo "Removing Docker image..."; \
+		docker rmi hyundai-logger:latest 2>/dev/null || true; \
+		echo ""; \
+		echo "✓ Cleanup complete"; \
+		echo ""; \
+		echo "Data volumes preserved:"; \
+		docker volume ls | grep hyundai-logger || docker volume ls | grep hyundai; \
+		echo ""; \
+		echo "To remove data volumes as well, run:"; \
+		echo "  docker-compose down -v"; \
+	else \
+		echo "Cancelled"; \
+	fi
