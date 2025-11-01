@@ -416,6 +416,30 @@ The Docker Compose setup includes:
 - **Hyundai Logger** - The main application
 - **Grafana** - Optional visualization dashboard
 
+### Multi-Architecture Support
+
+The project supports building container images for multiple CPU architectures:
+
+**Supported Platforms:**
+- **linux/amd64** - Intel/AMD 64-bit (most desktop/server systems)
+- **linux/arm64** - ARM 64-bit (Apple Silicon Macs, Raspberry Pi 4+, AWS Graviton)
+- **linux/arm/v7** - ARM 32-bit (Raspberry Pi 2/3, older ARM devices)
+
+**Building multi-arch images:**
+```bash
+make docker-build-multiarch
+```
+
+This uses Docker Buildx or Podman to create a single image that works across all supported architectures. The Go application compiles cleanly for all platforms thanks to `CGO_ENABLED=0`.
+
+**Use cases:**
+- Deploy on Raspberry Pi for low-power vehicle monitoring
+- Run on Apple Silicon Macs (M1/M2/M3) natively
+- Use ARM-based cloud instances (cheaper than x86)
+- Build once, deploy anywhere
+
+**Note:** The standard `make docker-build` builds only for your current platform, which is faster for development and local use.
+
 ### Data Persistence
 
 All data is stored in Docker volumes and host-mounted directories:
@@ -439,8 +463,12 @@ This design allows you to:
 ### Make Commands
 
 ```bash
-# Build Docker image
+# Build Docker image (for current platform)
 make docker-build
+
+# Build multi-architecture image (amd64, arm64, arm/v7)
+# Use this for Raspberry Pi, Apple Silicon, or cross-platform deployments
+make docker-build-multiarch
 
 # Deploy all services (builds and starts containers)
 make docker-deploy

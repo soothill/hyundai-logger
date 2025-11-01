@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
+.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-build-multiarch docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -148,13 +148,14 @@ help:
 	@echo "  build-all     - Build for multiple platforms"
 	@echo ""
 	@echo "Container Deployment (Docker/Podman):"
-	@echo "  docker-build   - Build container image"
-	@echo "  docker-deploy  - Deploy with compose (data persisted in volumes)"
-	@echo "  docker-stop    - Stop all containers"
-	@echo "  docker-restart - Restart all containers"
-	@echo "  docker-logs    - View container logs"
-	@echo "  docker-status  - Show container status"
-	@echo "  docker-clean   - Remove containers and images (keeps data volumes)"
+	@echo "  docker-build            - Build container image (current platform)"
+	@echo "  docker-build-multiarch  - Build multi-arch image (amd64, arm64, arm/v7)"
+	@echo "  docker-deploy           - Deploy with compose (data persisted in volumes)"
+	@echo "  docker-stop             - Stop all containers"
+	@echo "  docker-restart          - Restart all containers"
+	@echo "  docker-logs             - View container logs"
+	@echo "  docker-status           - Show container status"
+	@echo "  docker-clean            - Remove containers and images (keeps data volumes)"
 	@echo ""
 	@echo "  Note: Supports both Docker and Podman runtimes"
 	@echo ""
@@ -195,12 +196,51 @@ install-logrotate:
 	@echo "  sudo chown hyundai-logger:hyundai-logger /var/log/hyundai-logger"
 
 # Docker targets
-# Build Docker image
+# Build Docker image (single architecture)
 docker-build:
 	$(call check_container_runtime)
-	@echo "Building container image..."
+	@echo "Building container image for current platform..."
 	$(CONTAINER_CMD) build -t hyundai-logger:latest .
 	@echo "✓ Container image built successfully"
+
+# Build multi-architecture Docker image (amd64, arm64, arm/v7)
+docker-build-multiarch:
+	$(call check_container_runtime)
+	@echo "Building multi-architecture container image..."
+	@echo "Target platforms: linux/amd64, linux/arm64, linux/arm/v7"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1; then \
+		echo "Using Docker buildx for multi-arch build..."; \
+		if ! docker buildx inspect multiarch-builder >/dev/null 2>&1; then \
+			echo "Creating buildx builder instance..."; \
+			docker buildx create --name multiarch-builder --use; \
+		else \
+			echo "Using existing buildx builder..."; \
+			docker buildx use multiarch-builder; \
+		fi; \
+		docker buildx build \
+			--platform linux/amd64,linux/arm64,linux/arm/v7 \
+			--tag hyundai-logger:latest \
+			--load \
+			.; \
+	elif command -v podman >/dev/null 2>&1; then \
+		echo "Using Podman for multi-arch build..."; \
+		podman build \
+			--platform linux/amd64,linux/arm64,linux/arm/v7 \
+			--tag hyundai-logger:latest \
+			--manifest hyundai-logger:latest \
+			.; \
+	else \
+		echo "Error: No container runtime found"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ Multi-architecture image built successfully"
+	@echo ""
+	@echo "Supported architectures:"
+	@echo "  - linux/amd64   (Intel/AMD 64-bit)"
+	@echo "  - linux/arm64   (ARM 64-bit - Apple Silicon, Raspberry Pi 4+)"
+	@echo "  - linux/arm/v7  (ARM 32-bit - Raspberry Pi 2/3)"
 
 # Deploy with docker-compose (data and config externalized)
 docker-deploy:
