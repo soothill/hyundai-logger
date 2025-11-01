@@ -115,32 +115,76 @@ if [ "$REPO_CHECK_CODE" = "200" ]; then
 fi
 
 # Update repository description
-echo "Updating repository overview..."
+# Note: Docker Hub API requires updating description and full_description separately
+echo "Updating short description..."
+SHORT_RESPONSE=$(curl -s -w "\n%{http_code}" \
+    -H "Authorization: JWT ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -X PATCH \
+    -d "{\"description\": \"$SHORT_DESCRIPTION\"}" \
+    "https://hub.docker.com/v2/repositories/${DOCKERHUB_NAMESPACE}/${DOCKERHUB_REPO}/")
+
+SHORT_HTTP_CODE=$(echo "$SHORT_RESPONSE" | tail -n1)
+SHORT_RESPONSE_BODY=$(echo "$SHORT_RESPONSE" | sed '$d')
+
+if [ "$SHORT_HTTP_CODE" = "200" ]; then
+    echo "✓ Short description updated"
+else
+    echo "⚠️  Warning: Failed to update short description (HTTP $SHORT_HTTP_CODE)"
+    echo "Response: $SHORT_RESPONSE_BODY"
+fi
+
+echo ""
+echo "Updating full description (overview)..."
 RESPONSE=$(curl -s -w "\n%{http_code}" \
     -H "Authorization: JWT ${TOKEN}" \
     -H "Content-Type: application/json" \
     -X PATCH \
-    -d "{\"full_description\": $(echo "$FULL_DESCRIPTION" | jq -Rs .), \"description\": \"$SHORT_DESCRIPTION\"}" \
+    -d "{\"full_description\": $(echo "$FULL_DESCRIPTION" | jq -Rs .)}" \
     "https://hub.docker.com/v2/repositories/${DOCKERHUB_NAMESPACE}/${DOCKERHUB_REPO}/")
 
 HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
 RESPONSE_BODY=$(echo "$RESPONSE" | sed '$d')
 
 if [ "$HTTP_CODE" = "200" ]; then
-    echo "✓ Docker Hub overview updated successfully"
+    echo "✓ Full description updated successfully"
     echo ""
     echo "View at: https://hub.docker.com/r/${REPO_NAME}"
 else
     echo ""
-    echo "❌ Error: Failed to update Docker Hub (HTTP $HTTP_CODE)"
+    echo "❌ Error: Failed to update full description (HTTP $HTTP_CODE)"
     echo ""
     echo "Response: $RESPONSE_BODY"
     echo ""
     if [ "$HTTP_CODE" = "403" ]; then
-        echo "Permission denied. Please verify:"
-        echo "  1. Your token has 'Read & Write' permissions"
-        echo "  2. Repository namespace matches your username: ${DOCKERHUB_NAMESPACE} = ${DOCKERHUB_USERNAME}"
-        echo "  3. You own or have write access to this repository"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Permission Denied - Token Issues"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Your token can READ the repository but cannot WRITE to it."
+        echo ""
+        echo "Common causes:"
+        echo "  1. Token created with 'Public Repo Read Only' permissions"
+        echo "  2. Token missing 'Read, Write, Delete' scope"
+        echo "  3. Using a password instead of a Personal Access Token"
+        echo ""
+        echo "Solution - Create a new token with correct permissions:"
+        echo "  1. Go to: https://hub.docker.com/settings/security"
+        echo "  2. Click 'New Access Token'"
+        echo "  3. Description: 'Repository Updates' or similar"
+        echo "  4. Access permissions: Select 'Read, Write, Delete'"
+        echo "     (Or at minimum 'Read & Write')"
+        echo "  5. Copy the token immediately (you won't see it again)"
+        echo ""
+        echo "Then update your environment:"
+        echo "  export DOCKERHUB_TOKEN=dckr_pat_XXXXXXXXXXXXXXXXX"
+        echo ""
+        echo "Alternative - Manual update via Docker Hub UI:"
+        echo "  1. Go to: https://hub.docker.com/repository/docker/${REPO_NAME}/general"
+        echo "  2. Copy content from DOCKER_HUB.md"
+        echo "  3. Paste into 'Repository overview' section"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
     fi
     exit 1
