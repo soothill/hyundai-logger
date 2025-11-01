@@ -100,6 +100,52 @@ clean:
 	rm -f *.log
 	@echo "Clean complete"
 
+# Clean all build artifacts, images, and caches to free up disk space
+clean-all:
+	@echo "Cleaning Docker/Podman build artifacts and caches..."
+	@echo ""
+	@echo "This will remove:"
+	@echo "  - Hyundai-logger container images (all architectures)"
+	@echo "  - Go build and module cache"
+	@echo "  - Podman/Docker dangling images"
+	@echo "  - Unused container images, networks, and build cache"
+	@echo ""
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1
+	@echo ""
+	@echo "Removing hyundai-logger images..."
+	@podman manifest rm hyundai-logger:latest 2>/dev/null || true
+	@podman rmi localhost/hyundai-logger:latest 2>/dev/null || true
+	@podman rmi hyundai-logger:latest 2>/dev/null || true
+	@podman rmi hyundai-logger:amd64 2>/dev/null || true
+	@podman rmi hyundai-logger:arm64 2>/dev/null || true
+	@podman rmi hyundai-logger:armv7 2>/dev/null || true
+	@docker rmi hyundai-logger:latest 2>/dev/null || true
+	@docker rmi hyundai-logger:amd64 2>/dev/null || true
+	@docker rmi hyundai-logger:arm64 2>/dev/null || true
+	@docker rmi hyundai-logger:armv7 2>/dev/null || true
+	@echo "✓ Removed hyundai-logger images"
+	@echo ""
+	@echo "Cleaning Go caches..."
+	@go clean -cache -modcache -testcache 2>/dev/null || echo "Go cache cleanup failed or already clean"
+	@echo "✓ Go caches cleaned"
+	@echo ""
+	@echo "Cleaning Podman images and cache..."
+	@podman image prune -f 2>/dev/null || echo "Podman image prune failed or not available"
+	@podman system prune -f 2>/dev/null || echo "Podman system prune failed or not available"
+	@echo "✓ Podman cleanup complete"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
+		echo "Cleaning Docker images and cache..."; \
+		docker image prune -f 2>/dev/null || echo "Docker image prune failed"; \
+		docker system prune -f 2>/dev/null || echo "Docker system prune failed"; \
+		echo "✓ Docker cleanup complete"; \
+	fi
+	@echo ""
+	@echo "Disk space freed:"
+	@df -h / | grep -E 'Filesystem|/$$'
+	@echo ""
+	@echo "✓ Cleanup complete!"
+
 # Run tests
 test:
 	@echo "Running tests using $(NPROC) CPU cores..."
@@ -147,6 +193,7 @@ help:
 	@echo "  run           - Run the application"
 	@echo "  init-db       - Initialize the database schema"
 	@echo "  clean         - Remove build artifacts"
+	@echo "  clean-all     - Deep clean: remove all images, caches, and build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  install       - Install dependencies"
 	@echo "  fmt           - Format code"
@@ -342,10 +389,12 @@ docker-build-multiarch:
 			echo "✓ All base images pre-pulled"; \
 			echo ""; \
 			echo "Cleaning up previous build artifacts..."; \
+			podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
+			podman rmi localhost/hyundai-logger:latest 2>/dev/null || true; \
+			podman rmi hyundai-logger:latest 2>/dev/null || true; \
 			podman rmi hyundai-logger:amd64 2>/dev/null || true; \
 			podman rmi hyundai-logger:arm64 2>/dev/null || true; \
 			podman rmi hyundai-logger:armv7 2>/dev/null || true; \
-			podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
 			echo ""; \
 			echo "Building for linux/amd64..."; \
 			AMD64_ID=$$(podman build \
