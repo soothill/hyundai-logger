@@ -37,9 +37,11 @@ RUN if [ "$TARGETARCH" = "arm" ]; then \
     fi
 
 # Final stage
-FROM docker.io/alpine:latest
+FROM docker.io/alpine:3.21
 
-RUN apk --no-cache add ca-certificates tzdata
+# Update packages to get latest security fixes (including BusyBox 1.38.0+ for CVE-2025-46394)
+RUN apk --no-cache upgrade && \
+    apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
