@@ -93,24 +93,23 @@ init-db:
 	@echo "Initializing database..."
 	go run $(CMD_DIR)/main.go -init-db
 
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	rm -f $(BUILD_DIR)/$(BINARY_NAME)
-	rm -f *.log
-	@echo "Clean complete"
-
 # Clean all build artifacts, images, and caches to free up disk space
-clean-all:
-	@echo "Cleaning Docker/Podman build artifacts and caches..."
+clean clean-all:
+	@echo "Cleaning build artifacts, Docker/Podman images, and caches..."
 	@echo ""
 	@echo "This will remove:"
+	@echo "  - Build binaries and log files"
 	@echo "  - Hyundai-logger container images (all architectures)"
 	@echo "  - Go build and module cache"
 	@echo "  - Podman/Docker dangling images"
 	@echo "  - Unused container images, networks, and build cache"
 	@echo ""
 	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1
+	@echo ""
+	@echo "Removing build artifacts..."
+	@rm -f $(BUILD_DIR)/$(BINARY_NAME)
+	@rm -f *.log
+	@echo "✓ Build artifacts removed"
 	@echo ""
 	@echo "Removing hyundai-logger images..."
 	@podman manifest rm hyundai-logger:latest 2>/dev/null || true
@@ -193,8 +192,7 @@ help:
 	@echo "  build         - Build the application"
 	@echo "  run           - Run the application"
 	@echo "  init-db       - Initialize the database schema"
-	@echo "  clean         - Remove build artifacts"
-	@echo "  clean-all     - Deep clean: remove all images, caches, and build artifacts"
+	@echo "  clean         - Deep clean: remove all images, caches, and build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  install       - Install dependencies"
 	@echo "  fmt           - Format code"
