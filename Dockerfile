@@ -1,8 +1,14 @@
-# Build stage
-FROM docker.io/golang:1.23-alpine AS builder
+# Build stage - use native platform for compilation (much faster!)
+# BUILDPLATFORM is automatically set to the host platform (e.g., linux/amd64)
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.23-alpine AS builder
 
 # Build arguments for parallel compilation
 ARG GOMAXPROCS=4
+
+# Docker/Podman automatically provides these when using --platform
+ARG TARGETARCH
+ARG TARGETOS
+ARG BUILDPLATFORM
 
 WORKDIR /build
 
@@ -16,9 +22,19 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application with parallel compilation
-# GOMAXPROCS controls the number of CPUs Go can use during compilation
-RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=${GOMAXPROCS} go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go
+# Build the application with native cross-compilation
+# The Go compiler runs natively (fast!) and cross-compiles for the target architecture
+# TARGETARCH can be: amd64, arm64, arm (from --platform flag)
+# For arm/v7, TARGETARCH=arm and we set GOARM=7
+RUN if [ "$TARGETARCH" = "arm" ]; then \
+        echo "Cross-compiling for linux/arm (armv7) on $BUILDPLATFORM"; \
+        CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} GOARM=7 GOMAXPROCS=${GOMAXPROCS} \
+        go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go; \
+    else \
+        echo "Cross-compiling for ${TARGETOS:-linux}/${TARGETARCH} on $BUILDPLATFORM"; \
+        CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} GOMAXPROCS=${GOMAXPROCS} \
+        go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go; \
+    fi
 
 # Final stage
 FROM docker.io/alpine:latest

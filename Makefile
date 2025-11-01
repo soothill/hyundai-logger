@@ -267,13 +267,59 @@ docker-build-multiarch:
 		fi; \
 		echo "✓ QEMU emulation available"; \
 		echo ""; \
-		podman build \
+		echo "Pre-pulling base images for all architectures..."; \
+		echo "  Pulling golang:1.23-alpine for linux/amd64..."; \
+		podman pull --platform linux/amd64 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling alpine:latest for linux/amd64..."; \
+		podman pull --platform linux/amd64 docker.io/library/alpine:latest; \
+		echo "  Pulling golang:1.23-alpine for linux/arm64..."; \
+		podman pull --platform linux/arm64 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling alpine:latest for linux/arm64..."; \
+		podman pull --platform linux/arm64 docker.io/library/alpine:latest; \
+		echo "  Pulling golang:1.23-alpine for linux/arm/v7..."; \
+		podman pull --platform linux/arm/v7 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling alpine:latest for linux/arm/v7..."; \
+		podman pull --platform linux/arm/v7 docker.io/library/alpine:latest; \
+		echo "✓ All base images pre-pulled"; \
+		echo ""; \
+		echo "Cleaning up previous build artifacts..."; \
+		podman rmi hyundai-logger:amd64 2>/dev/null || true; \
+		podman rmi hyundai-logger:arm64 2>/dev/null || true; \
+		podman rmi hyundai-logger:armv7 2>/dev/null || true; \
+		podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
+		echo ""; \
+		echo "Building for linux/amd64..."; \
+		AMD64_ID=$$(podman build \
 			--jobs=$(NPROC) \
-			--platform linux/amd64,linux/arm64,linux/arm/v7 \
+			--platform linux/amd64 \
 			--build-arg GOMAXPROCS=$(NPROC) \
-			--tag hyundai-logger:latest \
-			--manifest hyundai-logger:latest \
-			.; \
+			--tag hyundai-logger:amd64 \
+			. | tail -1); \
+		echo "Built amd64: $$AMD64_ID"; \
+		echo ""; \
+		echo "Building for linux/arm64..."; \
+		ARM64_ID=$$(podman build \
+			--jobs=$(NPROC) \
+			--platform linux/arm64 \
+			--build-arg GOMAXPROCS=$(NPROC) \
+			--tag hyundai-logger:arm64 \
+			. | tail -1); \
+		echo "Built arm64: $$ARM64_ID"; \
+		echo ""; \
+		echo "Building for linux/arm/v7..."; \
+		ARMV7_ID=$$(podman build \
+			--jobs=$(NPROC) \
+			--platform linux/arm/v7 \
+			--build-arg GOMAXPROCS=$(NPROC) \
+			--tag hyundai-logger:armv7 \
+			. | tail -1); \
+		echo "Built armv7: $$ARMV7_ID"; \
+		echo ""; \
+		echo "Creating manifest list..."; \
+		podman manifest create hyundai-logger:latest; \
+		podman manifest add --arch amd64 hyundai-logger:latest containers-storage:localhost/hyundai-logger:amd64; \
+		podman manifest add --arch arm64 hyundai-logger:latest containers-storage:localhost/hyundai-logger:arm64; \
+		podman manifest add --arch arm hyundai-logger:latest containers-storage:localhost/hyundai-logger:armv7; \
 	else \
 		echo "Error: No container runtime found"; \
 		exit 1; \
