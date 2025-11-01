@@ -25,7 +25,6 @@ WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /build/hyundai-logger .
-COPY --from=builder /build/config.yaml .
 
 # Create logs directory
 RUN mkdir -p /app/logs
