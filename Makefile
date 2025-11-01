@@ -238,9 +238,17 @@ docker-build:
 		echo "For now, continuing with Podman..."; \
 		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 		echo ""; \
+		ARCH=$$(uname -m); \
+		case $$ARCH in \
+			x86_64) PLATFORM="linux/amd64" ;; \
+			aarch64) PLATFORM="linux/arm64" ;; \
+			armv7l) PLATFORM="linux/arm/v7" ;; \
+			*) PLATFORM="linux/$$ARCH" ;; \
+		esac; \
 		podman build \
 			--jobs=$(NPROC) \
 			--build-arg GOMAXPROCS=$(NPROC) \
+			--build-arg BUILDPLATFORM=$$PLATFORM \
 			-t hyundai-logger:latest \
 			.; \
 	else \
