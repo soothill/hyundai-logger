@@ -67,6 +67,24 @@ func (db *DB) Close() {
 	db.client.Close()
 }
 
+// HealthCheck performs a health check on the database connection
+func (db *DB) HealthCheck(ctx context.Context) error {
+	health, err := db.client.Health(ctx)
+	if err != nil {
+		return fmt.Errorf("database health check failed: %w", err)
+	}
+
+	if health.Status != "pass" {
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		return fmt.Errorf("database unhealthy: %s", msg)
+	}
+
+	return nil
+}
+
 // InitSchema ensures the bucket exists (InfluxDB is schemaless for data)
 func (db *DB) InitSchema(ctx context.Context) error {
 	// Get buckets API

@@ -131,11 +131,12 @@ func main() {
 	// Create data logger with intelligent scheduling and alerting
 	dataLogger := database.NewLogger(db, apiClient, &cfg.RateLimit, &cfg.RateLimit.ChargingConfig, alerter, cfg.Alerts.AlertThreshold, logger)
 
-	// Start Prometheus metrics server
+	// Start Prometheus metrics server with health checks
 	go func() {
 		logger.Info("Starting Prometheus metrics server on %s", *metricsPort)
 		logger.Info("Metrics available at http://localhost%s/metrics", *metricsPort)
-		if err := prometheus.StartMetricsServer(*metricsPort, dataLogger.GetMetricsCollector()); err != nil {
+		logger.Info("Health check available at http://localhost%s/health", *metricsPort)
+		if err := prometheus.StartMetricsServer(*metricsPort, dataLogger.GetMetricsCollector(), db.HealthCheck); err != nil {
 			logger.Error("Prometheus metrics server error: %v", err)
 		}
 	}()

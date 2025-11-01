@@ -6,9 +6,11 @@
 package prometheus
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
+	"github.com/soothill/hyundai-logger/internal/health"
 	"github.com/soothill/hyundai-logger/internal/metrics"
 )
 
@@ -97,13 +99,21 @@ func MetricsHandler(collector *metrics.Collector) http.HandlerFunc {
 	}
 }
 
-// StartMetricsServer starts an HTTP server for Prometheus metrics
-func StartMetricsServer(addr string, collector *metrics.Collector) error {
+// StartMetricsServer starts an HTTP server for Prometheus metrics and health checks
+func StartMetricsServer(addr string, collector *metrics.Collector, dbHealthCheck func(context.Context) error) error {
+	// Create health handler with version info
+	healthHandler := health.NewHandler(collector, "1.0.0")
+
+	// Add database health checker if provided
+	if dbHealthCheck != nil {
+		healthHandler.AddChecker(health.NewDatabaseChecker(dbHealthCheck))
+	}
+
+	// Register endpoints
 	http.HandleFunc("/metrics", MetricsHandler(collector))
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "OK\n")
-	})
+	http.HandleFunc("/health", healthHandler.HTTPHandler())
+	http.HandleFunc("/healthz", healthHandler.LivenessHandler())   // Kubernetes liveness probe
+	http.HandleFunc("/ready", healthHandler.ReadinessHandler())    // Kubernetes readiness probe
 
 	return http.ListenAndServe(addr, nil)
 }
