@@ -223,11 +223,11 @@ Choose the region where your Bluelink/Connect account was registered:
 
 | Region Code | Description | Service Name |
 |-------------|-------------|--------------|
+| `EU` | Europe | Bluelink |
 | `US` | United States | myHyundai |
 | `CA` | Canada | myHyundai |
-| `EU` | Europe | Bluelink |
 
-**Important:** Use the region where you **created your account**, not necessarily where you are currently located. For example, if you registered your account in the US but are temporarily in Canada, use `US`.
+**Important:** Use the region where you **created your account**, not necessarily where you are currently located. For example, if you registered your account in the EU but are temporarily in the US, use `EU`.
 
 ### Using config.yaml
 
@@ -239,7 +239,7 @@ hyundai:
   password: "your-password"
   pin: "1234"
   brand: "hyundai"  # or "kia"
-  region: "US"      # US, CA, EU
+  region: "EU"      # EU, US, CA
 
 rate_limit:
   requests_per_hour: 12  # Recommended: 12-24 per hour
@@ -288,7 +288,7 @@ export HYUNDAI_USERNAME="your-email@example.com"
 export HYUNDAI_PASSWORD="your-password"
 export HYUNDAI_PIN="1234"
 export HYUNDAI_BRAND="hyundai"
-export HYUNDAI_REGION="US"
+export HYUNDAI_REGION="EU"
 
 # InfluxDB connection
 export INFLUXDB_URL="http://localhost:8086"

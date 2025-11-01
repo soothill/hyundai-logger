@@ -64,7 +64,7 @@ hyundai:
   password: "password"            # Bluelink password
   pin: "1234"                     # Vehicle PIN
   brand: "hyundai"                # or "kia"
-  region: "US"                    # US, CA, EU
+  region: "EU"                    # EU, US, CA
 
 database:
   host: "localhost"
@@ -82,7 +82,7 @@ export HYUNDAI_USERNAME=email@example.com
 export HYUNDAI_PASSWORD=password
 export HYUNDAI_PIN=1234
 export HYUNDAI_BRAND=hyundai
-export HYUNDAI_REGION=US
+export HYUNDAI_REGION=EU
 
 # Database
 export DB_HOST=localhost

@@ -14,7 +14,7 @@ HYUNDAI_USERNAME=your-email@example.com
 HYUNDAI_PASSWORD=your-password
 HYUNDAI_PIN=1234
 HYUNDAI_BRAND=hyundai
-HYUNDAI_REGION=US
+HYUNDAI_REGION=EU
 INFLUXDB_TOKEN=your-secure-token-here
 EOF
 
@@ -63,7 +63,7 @@ The correct architecture is automatically selected when you pull the image. Perf
 | `HYUNDAI_PASSWORD` | Bluelink password | `your-password` |
 | `HYUNDAI_PIN` | 4-digit remote services PIN | `1234` |
 | `HYUNDAI_BRAND` | Vehicle brand | `hyundai` or `kia` |
-| `HYUNDAI_REGION` | Account region | `US`, `CA`, or `EU` |
+| `HYUNDAI_REGION` | Account region | `EU`, `US`, or `CA` |
 | `INFLUXDB_TOKEN` | InfluxDB API token | Generate in InfluxDB UI |
 
 ### Optional
@@ -126,7 +126,7 @@ services:
       - HYUNDAI_PASSWORD=${HYUNDAI_PASSWORD}
       - HYUNDAI_PIN=${HYUNDAI_PIN}
       - HYUNDAI_BRAND=${HYUNDAI_BRAND:-hyundai}
-      - HYUNDAI_REGION=${HYUNDAI_REGION:-US}
+      - HYUNDAI_REGION=${HYUNDAI_REGION:-EU}
       - INFLUXDB_URL=http://influxdb:8086
       - INFLUXDB_TOKEN=${INFLUXDB_TOKEN}
       - INFLUXDB_ORG=${INFLUXDB_ORG:-hyundai}

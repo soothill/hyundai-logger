@@ -41,7 +41,7 @@ services:
       HYUNDAI_PASSWORD: ${HYUNDAI_PASSWORD}
       HYUNDAI_PIN: ${HYUNDAI_PIN}
       HYUNDAI_BRAND: ${HYUNDAI_BRAND:-hyundai}
-      HYUNDAI_REGION: ${HYUNDAI_REGION:-US}
+      HYUNDAI_REGION: ${HYUNDAI_REGION:-EU}
 
       # InfluxDB connection
       INFLUXDB_URL: http://influxdb:8086
