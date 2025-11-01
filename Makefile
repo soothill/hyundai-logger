@@ -520,22 +520,28 @@ docker-push-docs:
 	@echo "  - Full description from DOCKER_HUB.md (or README.md)"
 	@echo "  - Short description"
 	@echo ""
-	@echo "Prerequisites:"
-	@echo "  1. Docker Hub account with access to $(DOCKER_REPO)"
-	@echo "  2. Docker Hub access token"
-	@echo ""
-	@echo "To create a Docker Hub access token:"
-	@echo "  1. Go to https://hub.docker.com/settings/security"
-	@echo "  2. Click 'New Access Token'"
-	@echo "  3. Give it a description (e.g., 'Documentation Updates')"
-	@echo "  4. Select 'Read & Write' permissions"
-	@echo "  5. Copy the token"
-	@echo ""
-	@echo "Set environment variables:"
-	@echo "  export DOCKERHUB_USERNAME=your-username"
-	@echo "  export DOCKERHUB_TOKEN=your-token"
-	@echo ""
-	@read -p "Press Enter to continue or Ctrl+C to cancel..." dummy
+	@if [ -z "$$DOCKERHUB_USERNAME" ] || [ -z "$$DOCKERHUB_TOKEN" ]; then \
+		echo "Prerequisites:"; \
+		echo "  1. Docker Hub account with access to $(DOCKER_REPO)"; \
+		echo "  2. Docker Hub access token"; \
+		echo ""; \
+		echo "To create a Docker Hub access token:"; \
+		echo "  1. Go to https://hub.docker.com/settings/security"; \
+		echo "  2. Click 'New Access Token'"; \
+		echo "  3. Give it a description (e.g., 'Documentation Updates')"; \
+		echo "  4. Select 'Read & Write' permissions"; \
+		echo "  5. Copy the token"; \
+		echo ""; \
+		echo "Set environment variables:"; \
+		echo "  export DOCKERHUB_USERNAME=your-username"; \
+		echo "  export DOCKERHUB_TOKEN=your-token"; \
+		echo ""; \
+		read -p "Press Enter to continue or Ctrl+C to cancel..." dummy; \
+	else \
+		echo "✓ Docker Hub credentials found"; \
+		echo "  Repository: $(DOCKER_REPO)"; \
+		echo ""; \
+	fi
 	@./scripts/update-dockerhub.sh
 
 # Deploy with docker-compose (data and config externalized)
