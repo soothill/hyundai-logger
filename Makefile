@@ -226,7 +226,7 @@ docker-build-multiarch:
 	@echo "Target platforms: linux/amd64, linux/arm64, linux/arm/v7"
 	@echo "Using $(NPROC) CPU cores for parallel build"
 	@echo ""
-	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then \
+	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
 		echo "Using Docker buildx for multi-arch build..."; \
 		if ! docker buildx inspect multiarch-builder >/dev/null 2>&1; then \
 			echo "Creating buildx builder instance..."; \
