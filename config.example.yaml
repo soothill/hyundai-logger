@@ -7,9 +7,14 @@ hyundai:
   password: "your-password"
   pin: "1234"
   brand: "hyundai"        # Options: hyundai, kia, genesis
-  region: "US"            # Options: US, CA, EU
+  region: "na"            # Options: na (North America), eu (Europe), kr (Korea), cn (China), au (Australia), jp (Japan), in (India), br (Brazil)
   use_stamps: false       # Set to true if using BlueLink stamps
   stamp_url: ""           # URL for stamp server if using stamps
+  # Region automatically configures:
+  #   - API endpoint URLs
+  #   - Locale and language
+  #   - Timezone
+  #   - Measurement units (metric/imperial)
 
 # Rate Limiting Configuration
 rate_limit:
