@@ -216,6 +216,28 @@ docker-build:
 			-t hyundai-logger:latest \
 			.; \
 	elif command -v podman >/dev/null 2>&1; then \
+		echo ""; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo "ℹ️  Docker Permission Issue - Using Podman Instead"; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo ""; \
+		echo "Docker is installed but you don't have permission to use it."; \
+		echo "Building with Podman instead (functionally identical)."; \
+		echo ""; \
+		echo "To fix Docker permissions for future builds:"; \
+		echo ""; \
+		echo "  1. Add yourself to the docker group:"; \
+		echo "     sudo usermod -aG docker $$USER"; \
+		echo ""; \
+		echo "  2. Log out and back in (or run):"; \
+		echo "     newgrp docker"; \
+		echo ""; \
+		echo "  3. Verify access:"; \
+		echo "     docker ps"; \
+		echo ""; \
+		echo "For now, continuing with Podman..."; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo ""; \
 		podman build \
 			--jobs=$(NPROC) \
 			--build-arg GOMAXPROCS=$(NPROC) \
