@@ -157,6 +157,7 @@ help:
 	@echo "  docker-build            - Build container image (current platform)"
 	@echo "  docker-build-multiarch  - Build multi-arch image (amd64, arm64, arm/v7)"
 	@echo "  docker-push             - Push multi-arch image to Docker Hub"
+	@echo "  docker-push-docs        - Update Docker Hub repository overview (requires credentials)"
 	@echo "  docker-deploy           - Deploy with compose (data persisted in volumes)"
 	@echo "  docker-stop             - Stop all containers"
 	@echo "  docker-restart          - Restart all containers"
@@ -508,6 +509,34 @@ docker-push:
 	@echo "  2. Update CHANGELOG.md with release notes"
 	@echo "  3. Create a Git tag for this release"
 	@echo "  4. GitHub README.md will auto-sync to Docker Hub"
+
+# Update Docker Hub repository overview and description
+docker-push-docs:
+	@echo "==============================================="
+	@echo "  Update Docker Hub Repository Overview"
+	@echo "==============================================="
+	@echo ""
+	@echo "This will update your Docker Hub repository with:"
+	@echo "  - Full description from DOCKER_HUB.md (or README.md)"
+	@echo "  - Short description"
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  1. Docker Hub account with access to $(DOCKER_REPO)"
+	@echo "  2. Docker Hub access token"
+	@echo ""
+	@echo "To create a Docker Hub access token:"
+	@echo "  1. Go to https://hub.docker.com/settings/security"
+	@echo "  2. Click 'New Access Token'"
+	@echo "  3. Give it a description (e.g., 'Documentation Updates')"
+	@echo "  4. Select 'Read & Write' permissions"
+	@echo "  5. Copy the token"
+	@echo ""
+	@echo "Set environment variables:"
+	@echo "  export DOCKERHUB_USERNAME=your-username"
+	@echo "  export DOCKERHUB_TOKEN=your-token"
+	@echo ""
+	@read -p "Press Enter to continue or Ctrl+C to cancel..." dummy
+	@./scripts/update-dockerhub.sh
 
 # Deploy with docker-compose (data and config externalized)
 docker-deploy:
