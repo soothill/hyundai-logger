@@ -1,6 +1,9 @@
 # Build stage
 FROM docker.io/golang:1.23-alpine AS builder
 
+# Build arguments for parallel compilation
+ARG GOMAXPROCS=4
+
 WORKDIR /build
 
 # Install build dependencies
@@ -13,8 +16,9 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go
+# Build the application with parallel compilation
+# GOMAXPROCS controls the number of CPUs Go can use during compilation
+RUN CGO_ENABLED=0 GOOS=linux GOMAXPROCS=${GOMAXPROCS} go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go
 
 # Final stage
 FROM docker.io/alpine:latest

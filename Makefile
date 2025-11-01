@@ -13,6 +13,9 @@ CMD_DIR=cmd/hyundai-logger
 CONTAINER_CMD := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
 CONTAINER_NAME := $(shell command -v docker 2>/dev/null && echo "Docker" || (command -v podman 2>/dev/null && echo "Podman" || echo ""))
 
+# Detect number of CPU cores for parallel builds
+NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
 # Compose command detection (docker-compose, docker compose, or podman-compose)
 COMPOSE_CMD := $(shell \
 	if command -v docker-compose >/dev/null 2>&1; then \
@@ -73,8 +76,8 @@ endef
 
 # Build the application
 build:
-	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)/main.go
+	@echo "Building $(BINARY_NAME) using $(NPROC) CPU cores..."
+	GOMAXPROCS=$(NPROC) go build -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)/main.go
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 # Run the application
@@ -96,8 +99,8 @@ clean:
 
 # Run tests
 test:
-	@echo "Running tests..."
-	go test -v ./...
+	@echo "Running tests using $(NPROC) CPU cores..."
+	GOMAXPROCS=$(NPROC) go test -v -p $(NPROC) ./...
 
 # Install dependencies
 install:
@@ -118,12 +121,12 @@ lint:
 
 # Build for multiple platforms
 build-all:
-	@echo "Building for multiple platforms..."
-	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_DIR)/main.go
-	GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_DIR)/main.go
-	GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)/main.go
-	GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_DIR)/main.go
-	GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_DIR)/main.go
+	@echo "Building for multiple platforms using $(NPROC) CPU cores..."
+	GOMAXPROCS=$(NPROC) GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 $(CMD_DIR)/main.go
+	GOMAXPROCS=$(NPROC) GOOS=linux GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 $(CMD_DIR)/main.go
+	GOMAXPROCS=$(NPROC) GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)/main.go
+	GOMAXPROCS=$(NPROC) GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_DIR)/main.go
+	GOMAXPROCS=$(NPROC) GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_DIR)/main.go
 	@echo "Multi-platform build complete"
 
 # Help
@@ -200,7 +203,20 @@ install-logrotate:
 docker-build:
 	$(call check_container_runtime)
 	@echo "Building container image for current platform..."
-	$(CONTAINER_CMD) build -t hyundai-logger:latest .
+	@echo "Using $(NPROC) CPU cores for parallel build"
+	@if command -v docker >/dev/null 2>&1; then \
+		DOCKER_BUILDKIT=1 docker build \
+			--build-arg GOMAXPROCS=$(NPROC) \
+			--build-arg BUILDKIT_INLINE_CACHE=1 \
+			-t hyundai-logger:latest \
+			.; \
+	elif command -v podman >/dev/null 2>&1; then \
+		podman build \
+			--jobs=$(NPROC) \
+			--build-arg GOMAXPROCS=$(NPROC) \
+			-t hyundai-logger:latest \
+			.; \
+	fi
 	@echo "✓ Container image built successfully"
 
 # Build multi-architecture Docker image (amd64, arm64, arm/v7)
@@ -208,6 +224,7 @@ docker-build-multiarch:
 	$(call check_container_runtime)
 	@echo "Building multi-architecture container image..."
 	@echo "Target platforms: linux/amd64, linux/arm64, linux/arm/v7"
+	@echo "Using $(NPROC) CPU cores for parallel build"
 	@echo ""
 	@if command -v docker >/dev/null 2>&1; then \
 		echo "Using Docker buildx for multi-arch build..."; \
@@ -218,15 +235,19 @@ docker-build-multiarch:
 			echo "Using existing buildx builder..."; \
 			docker buildx use multiarch-builder; \
 		fi; \
-		docker buildx build \
+		DOCKER_BUILDKIT=1 docker buildx build \
 			--platform linux/amd64,linux/arm64,linux/arm/v7 \
+			--build-arg GOMAXPROCS=$(NPROC) \
+			--build-arg BUILDKIT_INLINE_CACHE=1 \
 			--tag hyundai-logger:latest \
 			--load \
 			.; \
 	elif command -v podman >/dev/null 2>&1; then \
 		echo "Using Podman for multi-arch build..."; \
 		podman build \
+			--jobs=$(NPROC) \
 			--platform linux/amd64,linux/arm64,linux/arm/v7 \
+			--build-arg GOMAXPROCS=$(NPROC) \
 			--tag hyundai-logger:latest \
 			--manifest hyundai-logger:latest \
 			.; \
