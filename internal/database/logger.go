@@ -319,6 +319,11 @@ func (l *Logger) GetMetrics() metrics.Stats {
 	return l.metrics.GetStats()
 }
 
+// GetMetricsCollector returns the metrics collector for external use (e.g., Prometheus)
+func (l *Logger) GetMetricsCollector() *metrics.Collector {
+	return l.metrics
+}
+
 // LogMetrics logs the current metrics to the logger
 func (l *Logger) LogMetrics() {
 	stats := l.metrics.GetStats()
