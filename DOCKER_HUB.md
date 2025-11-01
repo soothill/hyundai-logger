@@ -217,3 +217,5 @@ This application is not affiliated with Hyundai Motor Company. It uses reverse-e
 ## License
 
 MIT License - See [LICENSE](https://github.com/soothill/hyundai-logger/blob/main/LICENSE) for details.
+
+Copyright (c) 2025 Darren Soothill
