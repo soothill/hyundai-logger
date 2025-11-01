@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-build-multiarch docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
+.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-build-multiarch docker-push docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -15,6 +15,9 @@ CONTAINER_NAME := $(shell command -v docker 2>/dev/null && echo "Docker" || (com
 
 # Detect number of CPU cores for parallel builds
 NPROC := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# Docker Hub repository (set DOCKER_REPO environment variable to override)
+DOCKER_REPO ?= soothill/hyundai-logger
 
 # Compose command detection (docker-compose, docker compose, or podman-compose)
 COMPOSE_CMD := $(shell \
@@ -153,6 +156,7 @@ help:
 	@echo "Container Deployment (Docker/Podman):"
 	@echo "  docker-build            - Build container image (current platform)"
 	@echo "  docker-build-multiarch  - Build multi-arch image (amd64, arm64, arm/v7)"
+	@echo "  docker-push             - Push multi-arch image to Docker Hub"
 	@echo "  docker-deploy           - Deploy with compose (data persisted in volumes)"
 	@echo "  docker-stop             - Stop all containers"
 	@echo "  docker-restart          - Restart all containers"
@@ -436,6 +440,54 @@ docker-build-multiarch:
 	@echo "  - linux/amd64   (Intel/AMD 64-bit)"
 	@echo "  - linux/arm64   (ARM 64-bit - Apple Silicon, Raspberry Pi 4+)"
 	@echo "  - linux/arm/v7  (ARM 32-bit - Raspberry Pi 2/3)"
+
+# Push multi-architecture image to Docker Hub
+docker-push:
+	$(call check_container_runtime)
+	@echo "Pushing multi-architecture image to Docker Hub..."
+	@echo "Repository: $(DOCKER_REPO)"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
+		echo "Using Docker to push..."; \
+		echo "Checking Docker Hub login status..."; \
+		if ! docker info 2>/dev/null | grep -q "Username:"; then \
+			echo "⚠️  Not logged in to Docker Hub"; \
+			echo "Please login with: docker login"; \
+			exit 1; \
+		fi; \
+		echo "✓ Logged in to Docker Hub"; \
+		echo ""; \
+		echo "Tagging image as $(DOCKER_REPO):latest..."; \
+		docker tag hyundai-logger:latest $(DOCKER_REPO):latest; \
+		echo "Pushing $(DOCKER_REPO):latest..."; \
+		docker push $(DOCKER_REPO):latest; \
+	elif command -v podman >/dev/null 2>&1; then \
+		echo "Using Podman to push..."; \
+		echo "Checking Docker Hub login status..."; \
+		if ! podman login --get-login docker.io >/dev/null 2>&1; then \
+			echo "⚠️  Not logged in to Docker Hub"; \
+			echo "Please login with: podman login docker.io"; \
+			exit 1; \
+		fi; \
+		echo "✓ Logged in to Docker Hub"; \
+		echo ""; \
+		echo "Tagging manifest as $(DOCKER_REPO):latest..."; \
+		podman tag localhost/hyundai-logger:latest $(DOCKER_REPO):latest; \
+		echo "Pushing multi-architecture manifest to $(DOCKER_REPO):latest..."; \
+		podman manifest push $(DOCKER_REPO):latest docker://$(DOCKER_REPO):latest; \
+	else \
+		echo "❌ Error: No container runtime found"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ Multi-architecture image pushed successfully to Docker Hub"
+	@echo ""
+	@echo "To pull this image on any platform:"
+	@echo "  docker pull $(DOCKER_REPO):latest"
+	@echo "  or"
+	@echo "  podman pull $(DOCKER_REPO):latest"
+	@echo ""
+	@echo "The correct architecture will be automatically selected based on your system."
 
 # Deploy with docker-compose (data and config externalized)
 docker-deploy:
