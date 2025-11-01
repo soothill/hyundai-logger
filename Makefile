@@ -285,16 +285,16 @@ docker-build-multiarch:
 			echo "✓ QEMU emulation available"; \
 			echo ""; \
 			echo "Pre-pulling base images for all architectures..."; \
-			echo "  Pulling golang:1.23-alpine for linux/amd64..."; \
-			podman pull --platform linux/amd64 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling golang:1.24-alpine for linux/amd64..."; \
+			podman pull --platform linux/amd64 docker.io/library/golang:1.24-alpine; \
 			echo "  Pulling alpine:latest for linux/amd64..."; \
 			podman pull --platform linux/amd64 docker.io/library/alpine:latest; \
-			echo "  Pulling golang:1.23-alpine for linux/arm64..."; \
-			podman pull --platform linux/arm64 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling golang:1.24-alpine for linux/arm64..."; \
+			podman pull --platform linux/arm64 docker.io/library/golang:1.24-alpine; \
 			echo "  Pulling alpine:latest for linux/arm64..."; \
 			podman pull --platform linux/arm64 docker.io/library/alpine:latest; \
-			echo "  Pulling golang:1.23-alpine for linux/arm/v7..."; \
-			podman pull --platform linux/arm/v7 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling golang:1.24-alpine for linux/arm/v7..."; \
+			podman pull --platform linux/arm/v7 docker.io/library/golang:1.24-alpine; \
 			echo "  Pulling alpine:latest for linux/arm/v7..."; \
 			podman pull --platform linux/arm/v7 docker.io/library/alpine:latest; \
 			echo "✓ All base images pre-pulled"; \
@@ -375,16 +375,16 @@ docker-build-multiarch:
 		echo "✓ QEMU emulation available"; \
 		echo ""; \
 		echo "Pre-pulling base images for all architectures..."; \
-		echo "  Pulling golang:1.23-alpine for linux/amd64..."; \
-		podman pull --platform linux/amd64 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling golang:1.24-alpine for linux/amd64..."; \
+		podman pull --platform linux/amd64 docker.io/library/golang:1.24-alpine; \
 		echo "  Pulling alpine:latest for linux/amd64..."; \
 		podman pull --platform linux/amd64 docker.io/library/alpine:latest; \
-		echo "  Pulling golang:1.23-alpine for linux/arm64..."; \
-		podman pull --platform linux/arm64 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling golang:1.24-alpine for linux/arm64..."; \
+		podman pull --platform linux/arm64 docker.io/library/golang:1.24-alpine; \
 		echo "  Pulling alpine:latest for linux/arm64..."; \
 		podman pull --platform linux/arm64 docker.io/library/alpine:latest; \
-		echo "  Pulling golang:1.23-alpine for linux/arm/v7..."; \
-		podman pull --platform linux/arm/v7 docker.io/library/golang:1.23-alpine; \
+		echo "  Pulling golang:1.24-alpine for linux/arm/v7..."; \
+		podman pull --platform linux/arm/v7 docker.io/library/golang:1.24-alpine; \
 		echo "  Pulling alpine:latest for linux/arm/v7..."; \
 		podman pull --platform linux/arm/v7 docker.io/library/alpine:latest; \
 		echo "✓ All base images pre-pulled"; \
