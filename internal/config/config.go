@@ -21,6 +21,7 @@ type Config struct {
 	Logging  LoggingConfig   `yaml:"logging"`
 	Retry    RetryConfig     `yaml:"retry"`
 	Alerts   AlertsConfig    `yaml:"alerts"`
+	Webhooks WebhooksConfig  `yaml:"webhooks"`
 }
 
 type HyundaiConfig struct {
@@ -104,6 +105,39 @@ type AlertsConfig struct {
 	ToEmail           string `yaml:"to_email"`
 	AlertThreshold    int    `yaml:"alert_threshold"`    // Number of consecutive failures before alerting
 	AlertCooldownMins int    `yaml:"alert_cooldown_mins"` // Minutes to wait before sending another alert
+}
+
+// WebhooksConfig defines webhook notification configuration
+type WebhooksConfig struct {
+	Enabled bool               `yaml:"enabled"`
+	Slack   SlackWebhookConfig `yaml:"slack"`
+	Discord DiscordWebhookConfig `yaml:"discord"`
+	Generic []GenericWebhookConfig `yaml:"generic"`
+}
+
+// SlackWebhookConfig defines Slack webhook configuration
+type SlackWebhookConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	WebhookURL string `yaml:"webhook_url"`
+	Channel    string `yaml:"channel"`
+	Username   string `yaml:"username"`
+	IconEmoji  string `yaml:"icon_emoji"`
+}
+
+// DiscordWebhookConfig defines Discord webhook configuration
+type DiscordWebhookConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	WebhookURL string `yaml:"webhook_url"`
+	Username   string `yaml:"username"`
+	AvatarURL  string `yaml:"avatar_url"`
+}
+
+// GenericWebhookConfig defines generic webhook configuration
+type GenericWebhookConfig struct {
+	Name    string            `yaml:"name"`
+	URL     string            `yaml:"url"`
+	Method  string            `yaml:"method"`
+	Headers map[string]string `yaml:"headers"`
 }
 
 // Load reads configuration from YAML file and environment variables

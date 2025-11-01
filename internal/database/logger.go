@@ -8,14 +8,23 @@ package database
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/soothill/hyundai-logger/internal/alerts"
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/errortracker"
 	"github.com/soothill/hyundai-logger/internal/metrics"
+	"github.com/influxdata/influxdb-client-go/v2/api/write"
 	"golang.org/x/sync/errgroup"
 )
+
+// vehiclePollResult holds the result of polling a single vehicle
+type vehiclePollResult struct {
+	vehicle api.Vehicle
+	points  []*write.Point
+	err     error
+}
 
 // LoggerInterface defines the logging interface
 type LoggerInterface interface {
@@ -187,7 +196,7 @@ func (l *Logger) calculatePollInterval() time.Duration {
 	return time.Duration(intervalMinutes) * time.Minute
 }
 
-// pollAllVehicles collects data from all vehicles in parallel for better performance
+// pollAllVehicles collects data from all vehicles in parallel with batch writing
 func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	startTime := time.Now()
 	l.logger.LogPollStart()
@@ -196,41 +205,65 @@ func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	// Use errgroup for parallel execution with proper error handling
 	g, gCtx := errgroup.WithContext(ctx)
 
-	// Channel to collect errors from parallel operations
-	errChan := make(chan error, len(vehicles))
+	// Channel to collect results from parallel operations
+	resultChan := make(chan vehiclePollResult, len(vehicles))
 
 	// Launch goroutine for each vehicle
 	for _, vehicle := range vehicles {
 		vehicle := vehicle // Capture loop variable for goroutine
 		g.Go(func() error {
-			if err := l.pollVehicle(gCtx, vehicle); err != nil {
-				l.logger.Error("Error polling vehicle %s: %v", vehicle.VIN, err)
-				l.metrics.RecordVehiclePoll(vehicle.VIN, false)
-				errChan <- err
-				return err // Continue polling other vehicles despite error
+			points, err := l.pollVehicleCollectPoints(gCtx, vehicle)
+			resultChan <- vehiclePollResult{
+				vehicle: vehicle,
+				points:  points,
+				err:     err,
 			}
-			l.metrics.RecordVehiclePoll(vehicle.VIN, true)
-			return nil
+			return nil // Don't stop other goroutines on error
 		})
 	}
 
 	// Wait for all goroutines to complete
-	_ = g.Wait() // We handle errors through errChan
-	close(errChan)
+	g.Wait()
+	close(resultChan)
+
+	// Collect all points and errors
+	var allPoints []*write.Point
+	var mu sync.Mutex
+	hasErrors := false
+	var lastErr error
+	errorCount := 0
+
+	for result := range resultChan {
+		if result.err != nil {
+			l.logger.Error("Error polling vehicle %s: %v", result.vehicle.VIN, result.err)
+			l.metrics.RecordVehiclePoll(result.vehicle.VIN, false)
+			hasErrors = true
+			lastErr = result.err
+			errorCount++
+		} else {
+			l.metrics.RecordVehiclePoll(result.vehicle.VIN, true)
+			// Collect points for batch write
+			mu.Lock()
+			allPoints = append(allPoints, result.points...)
+			mu.Unlock()
+		}
+	}
+
+	// Batch write all collected points in a single operation
+	if len(allPoints) > 0 {
+		l.logger.Info("Writing %d data points in batch", len(allPoints))
+		if err := l.db.WriteBatch(ctx, allPoints); err != nil {
+			l.logger.Error("Failed to write batch to database: %v", err)
+			hasErrors = true
+			lastErr = err
+		} else {
+			l.logger.Info("Successfully wrote %d points to database", len(allPoints))
+		}
+	}
 
 	duration := time.Since(startTime)
 	l.logger.LogPollComplete(duration)
 	l.logger.Info("Polled %d vehicles in parallel in %s", len(vehicles), duration.Round(time.Millisecond))
-
-	// Collect all errors
-	hasErrors := false
-	var lastErr error
-	errorCount := 0
-	for err := range errChan {
-		hasErrors = true
-		lastErr = err
-		errorCount++
-	}
 
 	if errorCount > 0 {
 		l.logger.Error("Completed poll with %d/%d vehicles reporting errors", errorCount, len(vehicles))
@@ -257,25 +290,25 @@ func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	l.metrics.UpdateVehiclesCharging(chargingCount)
 }
 
-// pollVehicle collects data from a single vehicle
-func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
+// pollVehicleCollectPoints collects data from a single vehicle and returns points for batch writing
+func (l *Logger) pollVehicleCollectPoints(ctx context.Context, vehicle api.Vehicle) ([]*write.Point, error) {
 	l.logger.Info("Polling vehicle: %s", vehicle.VIN)
+
+	var allPoints []*write.Point
 
 	// Get vehicle status
 	status, err := l.apiClient.GetVehicleStatus(ctx, vehicle.VehicleID)
 	if err != nil {
 		l.logger.LogError("Getting vehicle status", err)
-		return fmt.Errorf("getting vehicle status: %w", err)
+		return nil, fmt.Errorf("getting vehicle status: %w", err)
 	}
 
-	// Store vehicle status
-	if err := l.db.InsertVehicleStatus(ctx, status); err != nil {
-		l.logger.LogError("Storing vehicle status", err)
-	} else {
-		l.logger.LogDataCollection(vehicle.VIN, status.Odometer, status.FuelLevel)
-	}
+	// Collect vehicle status points (6 points)
+	statusPoints := l.db.CollectVehicleStatusPoints(status)
+	allPoints = append(allPoints, statusPoints...)
+	l.logger.LogDataCollection(vehicle.VIN, status.Odometer, status.FuelLevel)
 
-	// Store EV status if available
+	// Collect EV status point if available
 	if status.EV != nil {
 		// Update charging state tracking
 		wasCharging := l.lastCharging[vehicle.VIN]
@@ -286,9 +319,9 @@ func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
 			l.metrics.RecordChargingDetection()
 		}
 
-		if err := l.db.InsertEVStatus(ctx, status.Timestamp, vehicle.VehicleID, vehicle.VIN, status.EV); err != nil {
-			l.logger.LogError("Storing EV status", err)
-		} else {
+		evPoint := l.db.CollectEVStatusPoint(status.Timestamp, vehicle.VehicleID, vehicle.VIN, status.EV)
+		if evPoint != nil {
+			allPoints = append(allPoints, evPoint)
 			l.logger.LogEVData(vehicle.VIN, status.EV.BatteryLevel, status.EV.Charging)
 
 			// Log charging state changes
@@ -299,19 +332,28 @@ func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
 		}
 	}
 
-	// Get and store location
+	// Get and collect location point
 	location, err := l.apiClient.GetVehicleLocation(ctx, vehicle.VehicleID)
 	if err != nil {
 		l.logger.Error("Warning: failed to get location: %v", err)
 	} else {
-		if err := l.db.InsertLocation(ctx, location); err != nil {
-			l.logger.LogError("Storing location", err)
-		} else {
-			l.logger.LogLocation(vehicle.VIN, location.Location.Latitude, location.Location.Longitude)
-		}
+		locationPoint := l.db.CollectLocationPoint(location)
+		allPoints = append(allPoints, locationPoint)
+		l.logger.LogLocation(vehicle.VIN, location.Location.Latitude, location.Location.Longitude)
 	}
 
-	return nil
+	return allPoints, nil
+}
+
+// pollVehicle collects data from a single vehicle (kept for backward compatibility)
+func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
+	points, err := l.pollVehicleCollectPoints(ctx, vehicle)
+	if err != nil {
+		return err
+	}
+
+	// Write points immediately (non-batched)
+	return l.db.WriteBatch(ctx, points)
 }
 
 // GetMetrics returns current application metrics
