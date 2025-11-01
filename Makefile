@@ -520,6 +520,19 @@ docker-push-docs:
 	@echo "  - Full description from DOCKER_HUB.md (or README.md)"
 	@echo "  - Short description"
 	@echo ""
+	@if ! command -v jq >/dev/null 2>&1; then \
+		echo "❌ Error: jq is not installed"; \
+		echo ""; \
+		echo "The Docker Hub API script requires jq for JSON parsing."; \
+		echo ""; \
+		echo "Install jq:"; \
+		echo "  Ubuntu/Debian: sudo apt-get install -y jq"; \
+		echo "  Fedora:        sudo dnf install -y jq"; \
+		echo "  Arch Linux:    sudo pacman -S jq"; \
+		echo "  macOS:         brew install jq"; \
+		echo ""; \
+		exit 1; \
+	fi
 	@if [ -z "$$DOCKERHUB_USERNAME" ] || [ -z "$$DOCKERHUB_TOKEN" ]; then \
 		echo "Prerequisites:"; \
 		echo "  1. Docker Hub account with access to $(DOCKER_REPO)"; \
