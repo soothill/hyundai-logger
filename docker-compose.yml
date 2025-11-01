@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # InfluxDB v2 database
   influxdb:
-    image: influxdb:2.7
+    image: docker.io/influxdb:2.7
     container_name: hyundai-influxdb
     restart: unless-stopped
     environment:
@@ -58,7 +58,7 @@ services:
 
   # Optional: Grafana for visualization
   grafana:
-    image: grafana/grafana:latest
+    image: docker.io/grafana/grafana:latest
     container_name: hyundai-grafana
     restart: unless-stopped
     ports:

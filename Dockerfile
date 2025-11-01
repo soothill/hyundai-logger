@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM docker.io/golang:1.23-alpine AS builder
 
 WORKDIR /build
 
@@ -17,7 +17,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hyundai-logger cmd/hyundai-logger/main.go
 
 # Final stage
-FROM alpine:latest
+FROM docker.io/alpine:latest
 
 RUN apk --no-cache add ca-certificates tzdata
 
