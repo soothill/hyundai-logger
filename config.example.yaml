@@ -1,0 +1,175 @@
+# Hyundai Logger Configuration Example
+# Copy this file to config.yaml and customize with your settings
+
+# Hyundai Bluelink Account Configuration
+hyundai:
+  username: "your.email@example.com"
+  password: "your-password"
+  pin: "1234"
+  brand: "hyundai"        # Options: hyundai, kia, genesis
+  region: "US"            # Options: US, CA, EU
+  use_stamps: false       # Set to true if using BlueLink stamps
+  stamp_url: ""           # URL for stamp server if using stamps
+
+# Rate Limiting Configuration
+rate_limit:
+  requests_per_hour: 50           # Maximum API requests per hour
+  poll_interval_minutes: 5        # Default polling interval
+
+  # Time-based Scheduling (Optional)
+  schedule:
+    enabled: false                # Enable time-based polling schedules
+    periods:
+      - name: "Daytime"
+        start_hour: 6             # 6 AM
+        end_hour: 22              # 10 PM
+        interval_minutes: 5       # Poll every 5 minutes during day
+
+      - name: "Nighttime"
+        start_hour: 22            # 10 PM
+        end_hour: 6               # 6 AM
+        interval_minutes: 15      # Poll every 15 minutes at night
+
+  # Charging Detection (Optional)
+  charging:
+    enabled: true                 # Enable faster polling when charging
+    interval_minutes: 2           # Poll every 2 minutes when charging
+
+# InfluxDB Configuration
+database:
+  url: "http://localhost:8086"
+  token: "your-influxdb-token"
+  organization: "your-org"
+  bucket: "hyundai-logger"
+
+# Logging Configuration
+logging:
+  level: "info"                   # Options: debug, info, warn, error
+  file: ""                        # Leave empty for console only, or specify path
+
+# Retry Configuration
+retry:
+  max_attempts: 3                 # Maximum retry attempts for failed API calls
+  initial_delay_ms: 1000          # Initial delay before first retry (milliseconds)
+  max_delay_ms: 60000             # Maximum delay between retries (milliseconds)
+  backoff_multiplier: 2.0         # Exponential backoff multiplier
+
+# Email Alerts Configuration (Legacy)
+alerts:
+  enabled: false                  # Enable email alerts
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_username: "your.email@gmail.com"
+  smtp_password: "your-app-password"
+  from_email: "your.email@gmail.com"
+  to_email: "recipient@example.com"
+  alert_threshold: 5              # Number of consecutive failures before alerting
+  alert_cooldown_mins: 60         # Minutes to wait before sending another alert
+
+# Webhook Notifications (Recommended)
+webhooks:
+  enabled: true                   # Master switch for all webhooks
+
+  # Slack Integration
+  slack:
+    enabled: true
+    webhook_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    channel: "#vehicle-alerts"    # Optional: Override default channel
+    username: "Hyundai Logger"    # Optional: Custom bot username
+    icon_emoji: ":car:"           # Optional: Bot icon emoji
+
+  # Discord Integration
+  discord:
+    enabled: true
+    webhook_url: "https://discord.com/api/webhooks/YOUR/WEBHOOK/URL"
+    username: "Hyundai Logger"    # Optional: Custom bot username
+    avatar_url: ""                # Optional: Bot avatar URL
+
+  # Generic Webhooks
+  generic:
+    # Home Assistant Example
+    - name: "Home Assistant"
+      url: "http://homeassistant.local:8123/api/webhook/hyundai_logger"
+      method: "POST"
+      headers:
+        Authorization: "Bearer YOUR_HA_LONG_LIVED_TOKEN"
+
+    # PagerDuty Example
+    - name: "PagerDuty"
+      url: "https://events.pagerduty.com/v2/enqueue"
+      method: "POST"
+      headers:
+        Content-Type: "application/json"
+        Authorization: "Token token=YOUR_INTEGRATION_KEY"
+
+    # Custom API Example
+    - name: "Custom Alert System"
+      url: "https://your-server.com/api/alerts"
+      method: "POST"
+      headers:
+        X-API-Key: "your-api-key"
+        X-Source: "hyundai-logger"
+
+# Environment Variable Support
+# You can use environment variables for sensitive values:
+#
+# hyundai:
+#   username: "${HYUNDAI_USERNAME}"
+#   password: "${HYUNDAI_PASSWORD}"
+#   pin: "${HYUNDAI_PIN}"
+#
+# database:
+#   token: "${INFLUXDB_TOKEN}"
+#
+# webhooks:
+#   slack:
+#     webhook_url: "${SLACK_WEBHOOK_URL}"
+#   discord:
+#     webhook_url: "${DISCORD_WEBHOOK_URL}"
+#
+# Then set the environment variables:
+#   export HYUNDAI_USERNAME="your.email@example.com"
+#   export HYUNDAI_PASSWORD="your-password"
+#   export HYUNDAI_PIN="1234"
+#   export INFLUXDB_TOKEN="your-token"
+#   export SLACK_WEBHOOK_URL="https://hooks.slack.com/..."
+#   export DISCORD_WEBHOOK_URL="https://discord.com/..."
+
+# Advanced Configuration Notes:
+#
+# 1. Rate Limiting:
+#    - Hyundai API has strict rate limits
+#    - Recommended: 50 requests/hour, 5-minute intervals
+#    - Adjust based on your usage patterns
+#
+# 2. Charging Detection:
+#    - When enabled, polls more frequently when vehicle is charging
+#    - Automatically detects charging state
+#    - Reverts to normal interval when not charging
+#
+# 3. Time-based Scheduling:
+#    - Poll less frequently during off-hours to save API quota
+#    - Useful for overnight periods when car is parked
+#    - Periods can wrap around midnight (e.g., 22:00 to 6:00)
+#
+# 4. Webhooks:
+#    - More reliable than email alerts
+#    - Support for multiple platforms simultaneously
+#    - Test notifications sent when validation tool runs
+#    - Generic webhooks support custom HTTP headers
+#
+# 5. Retry Logic:
+#    - Exponential backoff prevents API hammering
+#    - Integrates with circuit breaker for fault tolerance
+#    - Rate limit handling respects Retry-After headers
+#
+# 6. Logging:
+#    - Use "debug" level for troubleshooting
+#    - Specify file path for persistent logs
+#    - Console logging when file path is empty
+#
+# 7. Security:
+#    - Never commit config files with real credentials to version control
+#    - Use environment variables for sensitive data
+#    - Rotate credentials regularly
+#    - Use read-only tokens when possible (InfluxDB)
