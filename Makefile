@@ -244,6 +244,29 @@ docker-build-multiarch:
 			.; \
 	elif command -v podman >/dev/null 2>&1; then \
 		echo "Using Podman for multi-arch build..."; \
+		echo ""; \
+		echo "Checking for QEMU emulation support..."; \
+		if ! command -v qemu-aarch64-static >/dev/null 2>&1 && ! command -v qemu-arm-static >/dev/null 2>&1; then \
+			echo ""; \
+			echo "❌ Error: QEMU user-mode emulation not found!"; \
+			echo ""; \
+			echo "Multi-architecture builds require QEMU to emulate different CPU architectures."; \
+			echo ""; \
+			echo "Install QEMU:"; \
+			echo "  Ubuntu/Debian: sudo apt-get install -y qemu-user-static binfmt-support"; \
+			echo "  Fedora:        sudo dnf install -y qemu-user-static"; \
+			echo "  Arch Linux:    sudo pacman -S qemu-user-static qemu-user-static-binfmt"; \
+			echo ""; \
+			echo "After installation, restart the binfmt service:"; \
+			echo "  sudo systemctl restart systemd-binfmt.service"; \
+			echo ""; \
+			echo "Alternatively, build for your current platform only with:"; \
+			echo "  make docker-build"; \
+			echo ""; \
+			exit 1; \
+		fi; \
+		echo "✓ QEMU emulation available"; \
+		echo ""; \
 		podman build \
 			--jobs=$(NPROC) \
 			--platform linux/amd64,linux/arm64,linux/arm/v7 \
