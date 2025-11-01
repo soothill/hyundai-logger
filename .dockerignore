@@ -31,6 +31,8 @@ Thumbs.db
 # Documentation
 *.md
 !README.md
+CHANGELOG.md
+DOCKER_HUB.md
 
 # Docker
 Dockerfile

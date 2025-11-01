@@ -447,6 +447,15 @@ docker-push:
 	@echo "Pushing multi-architecture image to Docker Hub..."
 	@echo "Repository: $(DOCKER_REPO)"
 	@echo ""
+	@echo "📝 Reminder: Update CHANGELOG.md before pushing!"
+	@echo "   - Document all changes since last release"
+	@echo "   - Follow semantic versioning (MAJOR.MINOR.PATCH)"
+	@echo ""
+	@echo "📚 Docker Hub Documentation:"
+	@echo "   - README is auto-synced from GitHub"
+	@echo "   - DOCKER_HUB.md provides Docker-specific docs"
+	@echo "   - Update both files before pushing"
+	@echo ""
 	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
 		echo "Using Docker to push..."; \
 		echo "Checking Docker Hub login status..."; \
@@ -482,12 +491,23 @@ docker-push:
 	@echo ""
 	@echo "✓ Multi-architecture image pushed successfully to Docker Hub"
 	@echo ""
+	@echo "📦 Image Details:"
+	@echo "  Repository: $(DOCKER_REPO):latest"
+	@echo "  Architectures: linux/amd64, linux/arm64, linux/arm/v7"
+	@echo "  View on Docker Hub: https://hub.docker.com/r/$(DOCKER_REPO)"
+	@echo ""
 	@echo "To pull this image on any platform:"
 	@echo "  docker pull $(DOCKER_REPO):latest"
-	@echo "  or"
+	@echo "  # or"
 	@echo "  podman pull $(DOCKER_REPO):latest"
 	@echo ""
 	@echo "The correct architecture will be automatically selected based on your system."
+	@echo ""
+	@echo "📄 Next Steps:"
+	@echo "  1. Verify image on Docker Hub: https://hub.docker.com/r/$(DOCKER_REPO)/tags"
+	@echo "  2. Update CHANGELOG.md with release notes"
+	@echo "  3. Create a Git tag for this release"
+	@echo "  4. GitHub README.md will auto-sync to Docker Hub"
 
 # Deploy with docker-compose (data and config externalized)
 docker-deploy:
