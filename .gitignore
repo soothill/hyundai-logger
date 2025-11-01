@@ -39,3 +39,4 @@ Thumbs.db
 # Config with sensitive data (keep config.yaml.example)
 config.yaml
 /validate-config
+/hyundai-logger-interactive
