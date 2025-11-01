@@ -8,11 +8,11 @@ package database
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/soothill/hyundai-logger/internal/alerts"
 	"github.com/soothill/hyundai-logger/internal/api"
+	"github.com/soothill/hyundai-logger/internal/errortracker"
 	"github.com/soothill/hyundai-logger/internal/metrics"
 	"golang.org/x/sync/errgroup"
 )
@@ -43,17 +43,6 @@ type ChargingConfig interface {
 	GetIntervalMinutes() int
 }
 
-// errorTracker tracks consecutive errors for alerting
-type errorTracker struct {
-	mu                    sync.Mutex
-	consecutiveErrors     int
-	lastError             error
-	lastErrorTime         time.Time
-	lastSuccessTime       time.Time
-	alertThreshold        int
-	hasAlerted            bool
-}
-
 // Logger handles periodic data collection and logging
 type Logger struct {
 	db                  *DB
@@ -65,7 +54,7 @@ type Logger struct {
 	stopCh              chan struct{}
 	stoppedCh           chan struct{}
 	alerter             *alerts.Alerter
-	errorTracker        *errorTracker
+	errorTracker        *errortracker.Tracker
 	metrics             *metrics.Collector
 }
 
@@ -81,9 +70,7 @@ func NewLogger(db *DB, apiClient *api.Client, rateLimitCfg RateLimitConfig, char
 		stopCh:       make(chan struct{}),
 		stoppedCh:    make(chan struct{}),
 		alerter:      alerter,
-		errorTracker: &errorTracker{
-			alertThreshold: alertThreshold,
-		},
+		errorTracker: errortracker.New(alertThreshold),
 		metrics:      metrics.New(),
 	}
 }
@@ -332,6 +319,11 @@ func (l *Logger) GetMetrics() metrics.Stats {
 	return l.metrics.GetStats()
 }
 
+// GetMetricsCollector returns the metrics collector for external use (e.g., Prometheus)
+func (l *Logger) GetMetricsCollector() *metrics.Collector {
+	return l.metrics
+}
+
 // LogMetrics logs the current metrics to the logger
 func (l *Logger) LogMetrics() {
 	stats := l.metrics.GetStats()
@@ -340,35 +332,25 @@ func (l *Logger) LogMetrics() {
 
 // recordError tracks an error and triggers alerts if threshold is reached
 func (l *Logger) recordError(err error) {
-	l.errorTracker.mu.Lock()
-	defer l.errorTracker.mu.Unlock()
+	shouldAlert := l.errorTracker.RecordError(err)
 
-	l.errorTracker.consecutiveErrors++
-	l.errorTracker.lastError = err
-	l.errorTracker.lastErrorTime = time.Now()
+	consecutiveErrors := l.errorTracker.GetConsecutiveErrors()
+	l.logger.Error("Poll error (%d consecutive failures): %v", consecutiveErrors, err)
 
-	l.logger.Error("Poll error (%d consecutive failures): %v", l.errorTracker.consecutiveErrors, err)
-
-	// Check if we should send an alert
-	if l.errorTracker.consecutiveErrors >= l.errorTracker.alertThreshold && !l.errorTracker.hasAlerted {
+	// Send alert if threshold reached
+	if shouldAlert {
 		l.sendAlert()
-		l.errorTracker.hasAlerted = true
 	}
 }
 
 // recordSuccess resets error tracking on successful poll
 func (l *Logger) recordSuccess() {
-	l.errorTracker.mu.Lock()
-	defer l.errorTracker.mu.Unlock()
+	wasRecovery := l.errorTracker.RecordSuccess()
 
 	// If we had errors and now succeeded, log recovery
-	if l.errorTracker.consecutiveErrors > 0 {
-		l.logger.Info("Poll recovered after %d consecutive failures", l.errorTracker.consecutiveErrors)
+	if wasRecovery {
+		l.logger.Info("Poll recovered from previous failures")
 	}
-
-	l.errorTracker.consecutiveErrors = 0
-	l.errorTracker.lastSuccessTime = time.Now()
-	l.errorTracker.hasAlerted = false
 }
 
 // sendAlert sends an email alert about persistent errors
@@ -377,11 +359,7 @@ func (l *Logger) sendAlert() {
 		return
 	}
 
-	l.errorTracker.mu.Lock()
-	errorCount := l.errorTracker.consecutiveErrors
-	lastError := l.errorTracker.lastError
-	lastSuccess := l.errorTracker.lastSuccessTime
-	l.errorTracker.mu.Unlock()
+	errorCount, lastError, lastSuccess, _ := l.errorTracker.GetStats()
 
 	subject := fmt.Sprintf("🚨 Hyundai Logger Alert: %d Consecutive Failures", errorCount)
 	body := alerts.FormatErrorAlert(

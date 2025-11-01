@@ -18,13 +18,15 @@ import (
 	"github.com/soothill/hyundai-logger/internal/config"
 	"github.com/soothill/hyundai-logger/internal/database"
 	"github.com/soothill/hyundai-logger/internal/logging"
+	"github.com/soothill/hyundai-logger/internal/prometheus"
 	"github.com/soothill/hyundai-logger/internal/retry"
 )
 
 var (
-	configPath = flag.String("config", "config.yaml", "Path to configuration file")
-	initDB     = flag.Bool("init-db", false, "Initialize database schema and exit")
-	version    = "1.0.0"
+	configPath  = flag.String("config", "config.yaml", "Path to configuration file")
+	initDB      = flag.Bool("init-db", false, "Initialize database schema and exit")
+	metricsPort = flag.String("metrics-port", ":9090", "Prometheus metrics HTTP port")
+	version     = "1.0.0"
 )
 
 func main() {
@@ -128,6 +130,15 @@ func main() {
 
 	// Create data logger with intelligent scheduling and alerting
 	dataLogger := database.NewLogger(db, apiClient, &cfg.RateLimit, &cfg.RateLimit.ChargingConfig, alerter, cfg.Alerts.AlertThreshold, logger)
+
+	// Start Prometheus metrics server
+	go func() {
+		logger.Info("Starting Prometheus metrics server on %s", *metricsPort)
+		logger.Info("Metrics available at http://localhost%s/metrics", *metricsPort)
+		if err := prometheus.StartMetricsServer(*metricsPort, dataLogger.GetMetricsCollector()); err != nil {
+			logger.Error("Prometheus metrics server error: %v", err)
+		}
+	}()
 
 	// Start data logger
 	if err := dataLogger.Start(ctx); err != nil {

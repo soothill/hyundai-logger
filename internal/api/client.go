@@ -20,6 +20,11 @@ import (
 	"golang.org/x/time/rate"
 )
 
+const (
+	// apiCallTimeout is the default timeout for individual API calls
+	apiCallTimeout = 25 * time.Second
+)
+
 // Client represents a Hyundai Bluelink API client
 type Client struct {
 	httpClient   *http.Client
@@ -192,6 +197,9 @@ func (c *Client) Authenticate(ctx context.Context) error {
 
 // GetVehicles retrieves the list of vehicles associated with the account with retry logic
 func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
+	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+	defer cancel()
+
 	endpoint := fmt.Sprintf("%s/v2/vehicles", c.baseURL)
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
@@ -209,6 +217,9 @@ func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
 
 // GetVehicleStatus retrieves the current status of a vehicle with retry logic
 func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*VehicleStatus, error) {
+	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+	defer cancel()
+
 	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
@@ -226,6 +237,9 @@ func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*Vehic
 
 // GetVehicleLocation retrieves the current location of a vehicle with retry logic
 func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Location, error) {
+	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+	defer cancel()
+
 	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
@@ -243,6 +257,9 @@ func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Loc
 
 // GetOdometer retrieves the odometer reading with retry logic
 func (c *Client) GetOdometer(ctx context.Context, vehicleID string) (*Odometer, error) {
+	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+	defer cancel()
+
 	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/odometer", c.baseURL, vehicleID)
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
