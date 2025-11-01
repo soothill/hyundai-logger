@@ -292,6 +292,7 @@ docker-build-multiarch:
 		AMD64_ID=$$(podman build \
 			--jobs=$(NPROC) \
 			--platform linux/amd64 \
+			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--tag hyundai-logger:amd64 \
 			. | tail -1); \
@@ -301,6 +302,7 @@ docker-build-multiarch:
 		ARM64_ID=$$(podman build \
 			--jobs=$(NPROC) \
 			--platform linux/arm64 \
+			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--tag hyundai-logger:arm64 \
 			. | tail -1); \
@@ -310,6 +312,7 @@ docker-build-multiarch:
 		ARMV7_ID=$$(podman build \
 			--jobs=$(NPROC) \
 			--platform linux/arm/v7 \
+			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--tag hyundai-logger:armv7 \
 			. | tail -1); \
