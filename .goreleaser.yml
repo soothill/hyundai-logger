@@ -1,0 +1,210 @@
+# GoReleaser configuration for Hyundai Logger
+project_name: hyundai-logger
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: hyundai-logger
+    main: ./cmd/hyundai-logger
+    binary: hyundai-logger
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - 7
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: export-data
+    main: ./cmd/export-data
+    binary: export-data
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+  - id: hyundai-logger-interactive
+    main: ./cmd/hyundai-logger-interactive
+    binary: hyundai-logger-interactive
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+  - id: validate-config
+    main: ./cmd/validate-config
+    binary: validate-config
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - config.example.yaml
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+release:
+  github:
+    owner: soothill
+    name: hyundai-logger
+  draft: false
+  prerelease: auto
+  name_template: "Release {{.Version}}"
+  header: |
+    ## Hyundai Logger {{.Version}}
+
+    Vehicle telemetry data collector for Hyundai/Kia vehicles.
+
+    ### Installation
+
+    Download the appropriate binary for your platform and extract it.
+
+    ### Docker
+
+    ```bash
+    docker pull ghcr.io/soothill/hyundai-logger:{{.Version}}
+    ```
+
+    ### Kubernetes/Helm
+
+    ```bash
+    helm install hyundai-logger oci://ghcr.io/soothill/charts/hyundai-logger --version {{.Version}}
+    ```
+
+  footer: |
+    **Full Changelog**: https://github.com/soothill/hyundai-logger/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## What's Included
+
+    - Main logger binary
+    - Data export tool
+    - Interactive CLI
+    - Configuration validator
+    - Helm chart
+    - Terraform modules
+    - Docker image
+
+nfpms:
+  - id: packages
+    package_name: hyundai-logger
+    vendor: Darren Soothill
+    homepage: https://github.com/soothill/hyundai-logger
+    maintainer: Darren Soothill <darren@soothill.com>
+    description: Vehicle telemetry data collector for Hyundai/Kia vehicles
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    contents:
+      - src: config.example.yaml
+        dst: /etc/hyundai-logger/config.example.yaml
+        type: config
+    scripts:
+      postinstall: "scripts/postinstall.sh"
+      preremove: "scripts/preremove.sh"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-amd64"
+      - "ghcr.io/soothill/hyundai-logger:latest-amd64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Vehicle telemetry data collector"
+      - "--label=org.opencontainers.image.url=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.source=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+
+  - image_templates:
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-arm64"
+      - "ghcr.io/soothill/hyundai-logger:latest-arm64"
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Vehicle telemetry data collector"
+      - "--label=org.opencontainers.image.url=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.source=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+
+docker_manifests:
+  - name_template: "ghcr.io/soothill/hyundai-logger:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-amd64"
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-arm64"
+
+  - name_template: "ghcr.io/soothill/hyundai-logger:latest"
+    image_templates:
+      - "ghcr.io/soothill/hyundai-logger:latest-amd64"
+      - "ghcr.io/soothill/hyundai-logger:latest-arm64"

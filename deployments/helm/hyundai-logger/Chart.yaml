@@ -1,0 +1,25 @@
+apiVersion: v2
+name: hyundai-logger
+description: A Helm chart for Hyundai Logger - Vehicle telemetry data collector for Hyundai/Kia vehicles
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - hyundai
+  - kia
+  - bluelink
+  - vehicle
+  - telemetry
+  - iot
+home: https://github.com/soothill/hyundai-logger
+sources:
+  - https://github.com/soothill/hyundai-logger
+maintainers:
+  - name: Darren Soothill
+    email: darren@soothill.com
+
+dependencies:
+  - name: influxdb
+    version: "2.1.0"
+    repository: https://helm.influxdata.com/
+    condition: influxdb.enabled

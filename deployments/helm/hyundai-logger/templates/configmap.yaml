@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hyundai-logger.fullname" . }}
+  labels:
+    {{- include "hyundai-logger.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    hyundai:
+      brand: {{ .Values.config.brand | quote }}
+      region: {{ .Values.config.region | quote }}
+      use_stamps: false
+      stamp_url: ""
+
+    rate_limit:
+      requests_per_hour: {{ .Values.config.requestsPerHour }}
+      poll_interval_minutes: {{ .Values.config.pollInterval }}
+
+    database:
+      url: {{ .Values.influxdb.url | default (printf "http://%s-influxdb:8086" (include "hyundai-logger.fullname" .)) | quote }}
+      organization: {{ .Values.influxdb.organization | quote }}
+      bucket: {{ .Values.influxdb.bucket | quote }}
+
+    logging:
+      level: {{ .Values.logging.level | quote }}
+      file: {{ .Values.logging.file | quote }}
+
+    {{- if .Values.webhooks.enabled }}
+    webhooks:
+      {{- if .Values.webhooks.slack.enabled }}
+      slack:
+        enabled: true
+        webhook_url: {{ .Values.webhooks.slack.webhookUrl | quote }}
+      {{- end }}
+      {{- if .Values.webhooks.discord.enabled }}
+      discord:
+        enabled: true
+        webhook_url: {{ .Values.webhooks.discord.webhookUrl | quote }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.charging.optimizerEnabled }}
+    charging:
+      optimizer_enabled: true
+      fast_charge_power_kw: {{ .Values.charging.fastChargePower }}
+      trickle_power_kw: {{ .Values.charging.tricklePower }}
+    {{- end }}
+
+    {{- if .Values.configReload.enabled }}
+    config_reload:
+      enabled: true
+      debounce_seconds: {{ .Values.configReload.debounceSeconds }}
+    {{- end }}
+
+    {{- if .Values.debug.enabled }}
+    debug:
+      enabled: true
+      timestamps: {{ .Values.debug.timestamps }}
+      colors: {{ .Values.debug.colors }}
+    {{- end }}
+
+    {{- if .Values.config.mockMode }}
+    mock_mode: true
+    {{- end }}
