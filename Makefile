@@ -9,6 +9,68 @@ BINARY_NAME=hyundai-logger
 BUILD_DIR=.
 CMD_DIR=cmd/hyundai-logger
 
+# Container runtime detection (Docker or Podman)
+CONTAINER_CMD := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
+CONTAINER_NAME := $(shell command -v docker 2>/dev/null && echo "Docker" || (command -v podman 2>/dev/null && echo "Podman" || echo ""))
+
+# Compose command detection (docker-compose, docker compose, or podman-compose)
+COMPOSE_CMD := $(shell \
+	if command -v docker-compose >/dev/null 2>&1; then \
+		echo "docker-compose"; \
+	elif docker compose version >/dev/null 2>&1; then \
+		echo "docker compose"; \
+	elif command -v podman-compose >/dev/null 2>&1; then \
+		echo "podman-compose"; \
+	else \
+		echo ""; \
+	fi)
+
+# Helper function to check if container runtime is available
+define check_container_runtime
+	@if [ -z "$(CONTAINER_CMD)" ]; then \
+		echo ""; \
+		echo "❌ Error: No container runtime found!"; \
+		echo ""; \
+		echo "This command requires either Docker or Podman to be installed."; \
+		echo ""; \
+		echo "Install Docker:"; \
+		echo "  Ubuntu/Debian: sudo apt-get install docker.io docker-compose"; \
+		echo "  Fedora:        sudo dnf install docker docker-compose"; \
+		echo "  macOS:         brew install docker docker-compose"; \
+		echo "  Or visit:      https://docs.docker.com/get-docker/"; \
+		echo ""; \
+		echo "Install Podman (alternative):"; \
+		echo "  Ubuntu/Debian: sudo apt-get install podman podman-compose"; \
+		echo "  Fedora:        sudo dnf install podman podman-compose"; \
+		echo "  macOS:         brew install podman podman-compose"; \
+		echo "  Or visit:      https://podman.io/getting-started/installation"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if [ -z "$(COMPOSE_CMD)" ]; then \
+		echo ""; \
+		echo "❌ Error: No compose tool found!"; \
+		echo ""; \
+		echo "$(CONTAINER_NAME) is installed, but compose is missing."; \
+		echo ""; \
+		if [ "$(CONTAINER_NAME)" = "Docker" ]; then \
+			echo "Install docker-compose:"; \
+			echo "  Ubuntu/Debian: sudo apt-get install docker-compose"; \
+			echo "  Fedora:        sudo dnf install docker-compose"; \
+			echo "  macOS:         brew install docker-compose"; \
+			echo "  Or use:        docker compose (built-in with newer Docker)"; \
+		else \
+			echo "Install podman-compose:"; \
+			echo "  Ubuntu/Debian: sudo apt-get install podman-compose"; \
+			echo "  Fedora:        sudo dnf install podman-compose"; \
+			echo "  macOS:         brew install podman-compose"; \
+		fi; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "✓ Using $(CONTAINER_NAME) with compose"
+endef
+
 # Build the application
 build:
 	@echo "Building $(BINARY_NAME)..."
@@ -85,14 +147,16 @@ help:
 	@echo "  lint          - Run linter"
 	@echo "  build-all     - Build for multiple platforms"
 	@echo ""
-	@echo "Docker Deployment:"
-	@echo "  docker-build   - Build Docker image"
-	@echo "  docker-deploy  - Deploy with docker-compose (data persisted in volumes)"
+	@echo "Container Deployment (Docker/Podman):"
+	@echo "  docker-build   - Build container image"
+	@echo "  docker-deploy  - Deploy with compose (data persisted in volumes)"
 	@echo "  docker-stop    - Stop all containers"
 	@echo "  docker-restart - Restart all containers"
 	@echo "  docker-logs    - View container logs"
 	@echo "  docker-status  - Show container status"
 	@echo "  docker-clean   - Remove containers and images (keeps data volumes)"
+	@echo ""
+	@echo "  Note: Supports both Docker and Podman runtimes"
 	@echo ""
 	@echo ""
 	@echo "System Installation:"
@@ -133,13 +197,15 @@ install-logrotate:
 # Docker targets
 # Build Docker image
 docker-build:
-	@echo "Building Docker image..."
-	docker build -t hyundai-logger:latest .
-	@echo "Docker image built successfully"
+	$(call check_container_runtime)
+	@echo "Building container image..."
+	$(CONTAINER_CMD) build -t hyundai-logger:latest .
+	@echo "✓ Container image built successfully"
 
 # Deploy with docker-compose (data and config externalized)
 docker-deploy:
-	@echo "Deploying Hyundai Logger with Docker Compose..."
+	$(call check_container_runtime)
+	@echo "Deploying Hyundai Logger with $(CONTAINER_NAME) Compose..."
 	@echo ""
 	@if [ ! -f .env ]; then \
 		echo "⚠️  WARNING: .env file not found!"; \
@@ -153,7 +219,7 @@ docker-deploy:
 	@echo "✓ Configuration file found"
 	@echo ""
 	@echo "Starting services..."
-	docker-compose up -d --build
+	$(COMPOSE_CMD) up -d --build
 	@echo ""
 	@echo "==============================================="
 	@echo "  Deployment Complete!"
@@ -181,48 +247,53 @@ docker-deploy:
 
 # Stop all containers
 docker-stop:
+	$(call check_container_runtime)
 	@echo "Stopping containers..."
-	docker-compose down
-	@echo "Containers stopped (data volumes preserved)"
+	$(COMPOSE_CMD) down
+	@echo "✓ Containers stopped (data volumes preserved)"
 
 # Restart all containers
 docker-restart:
+	$(call check_container_runtime)
 	@echo "Restarting containers..."
-	docker-compose restart
-	@echo "Containers restarted"
+	$(COMPOSE_CMD) restart
+	@echo "✓ Containers restarted"
 
 # View container logs
 docker-logs:
+	$(call check_container_runtime)
 	@echo "Showing logs (Ctrl+C to exit)..."
 	@echo ""
-	docker-compose logs -f hyundai-logger
+	$(COMPOSE_CMD) logs -f hyundai-logger
 
 # Show container status
 docker-status:
+	$(call check_container_runtime)
 	@echo "Container status:"
 	@echo ""
-	docker-compose ps
+	$(COMPOSE_CMD) ps
 	@echo ""
-	@echo "Docker volumes:"
-	docker volume ls | grep hyundai
+	@echo "Volumes:"
+	$(CONTAINER_CMD) volume ls | grep hyundai
 
 # Clean up containers and images (preserve data volumes)
 docker-clean:
+	$(call check_container_runtime)
 	@echo "⚠️  This will remove containers and images but preserve data volumes."
 	@read -p "Continue? [y/N] " confirm; \
 	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
 		echo "Stopping and removing containers..."; \
-		docker-compose down; \
-		echo "Removing Docker image..."; \
-		docker rmi hyundai-logger:latest 2>/dev/null || true; \
+		$(COMPOSE_CMD) down; \
+		echo "Removing container image..."; \
+		$(CONTAINER_CMD) rmi hyundai-logger:latest 2>/dev/null || true; \
 		echo ""; \
 		echo "✓ Cleanup complete"; \
 		echo ""; \
 		echo "Data volumes preserved:"; \
-		docker volume ls | grep hyundai-logger || docker volume ls | grep hyundai; \
+		$(CONTAINER_CMD) volume ls | grep hyundai-logger || $(CONTAINER_CMD) volume ls | grep hyundai; \
 		echo ""; \
 		echo "To remove data volumes as well, run:"; \
-		echo "  docker-compose down -v"; \
+		echo "  $(COMPOSE_CMD) down -v"; \
 	else \
 		echo "Cancelled"; \
 	fi

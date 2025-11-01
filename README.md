@@ -69,9 +69,9 @@ If you experience 12V battery issues:
 
 **You have been warned!** The developers are not responsible for any battery drain or vehicle issues caused by excessive polling. Use conservative settings and monitor your battery health.
 
-## Quick Docker Deployment
+## Quick Container Deployment
 
-The easiest way to deploy Hyundai Logger is using Docker with persistent volumes for data and configuration:
+The easiest way to deploy Hyundai Logger is using Docker or Podman with persistent volumes for data and configuration:
 
 ```bash
 # Clone the repository
@@ -103,11 +103,13 @@ make docker-deploy
 - `make docker-stop` - Stop all services
 - `make docker-restart` - Restart services
 
-See the [Docker Deployment](#docker-deployment) section below for more details.
+See the [Container Deployment](#container-deployment-dockerpodman) section below for more details.
 
 ## Installation
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: Container Deployment (Recommended)
+
+Supports Docker or Podman - the Makefile will automatically detect and use whichever is installed.
 
 1. Clone or download this project:
 
@@ -125,6 +127,10 @@ cp .env.example .env
 3. Start the services:
 
 ```bash
+# Using make (recommended - auto-detects Docker/Podman)
+make docker-deploy
+
+# Or directly with docker-compose/podman-compose
 docker-compose up -d
 ```
 
@@ -133,6 +139,8 @@ This will automatically:
 - Create the organization and bucket with 90-day retention
 - Build and run the Hyundai Logger
 - Set up Grafana for visualization (optional)
+
+**Note:** The `make docker-deploy` command automatically detects whether you have Docker or Podman installed and uses the appropriate commands.
 
 ### Option 2: Manual Installation
 
@@ -391,9 +399,15 @@ sudo logrotate -f /etc/logrotate.d/hyundai-logger  # Force rotation
 
 **Note:** If you're using Docker deployment, log rotation is handled automatically within the container and this setup is not required.
 
-## Docker Deployment
+## Container Deployment (Docker/Podman)
 
-The Docker deployment provides a complete, containerized solution with persistent data storage. All configuration and data are kept outside the containers for easy upgrades and backups.
+The container deployment provides a complete, containerized solution with persistent data storage. All configuration and data are kept outside the containers for easy upgrades and backups.
+
+**Supported runtimes:**
+- **Docker** - Traditional Docker Engine with docker-compose
+- **Podman** - Rootless container alternative with podman-compose
+
+The Makefile automatically detects which runtime is available and uses it. Both work identically.
 
 ### Architecture
 
