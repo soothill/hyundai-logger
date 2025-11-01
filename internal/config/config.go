@@ -38,6 +38,9 @@ type RateLimitConfig struct {
 	PollIntervalMinutes int              `yaml:"poll_interval_minutes"`
 	Schedule            ScheduleConfig   `yaml:"schedule"`
 	ChargingConfig      ChargingConfig   `yaml:"charging"`
+
+	// Pre-computed lookup table for O(1) interval lookups [0-23 hours]
+	intervalByHour      [24]int
 }
 
 // ScheduleConfig defines time-based polling schedules
@@ -166,6 +169,9 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
+	// Pre-compute interval lookup table for O(1) access
+	cfg.RateLimit.precomputeIntervals()
+
 	return &cfg, nil
 }
 
@@ -271,32 +277,43 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// GetCurrentInterval returns the appropriate poll interval for the current time
-func (r *RateLimitConfig) GetCurrentInterval(currentHour int) int {
-	// If schedule is not enabled, return default interval
-	if !r.Schedule.Enabled {
-		return r.PollIntervalMinutes
+// precomputeIntervals pre-computes interval lookup table for O(1) access
+func (r *RateLimitConfig) precomputeIntervals() {
+	// Initialize all hours with default interval
+	for i := 0; i < 24; i++ {
+		r.intervalByHour[i] = r.PollIntervalMinutes
 	}
 
-	// Find the matching period for current hour
+	// If schedule is not enabled, we're done
+	if !r.Schedule.Enabled {
+		return
+	}
+
+	// Apply each period to the lookup table
 	for _, period := range r.Schedule.Periods {
-		if r.isHourInPeriod(currentHour, period.StartHour, period.EndHour) {
-			return period.IntervalMinutes
+		if period.StartHour <= period.EndHour {
+			// Normal period (e.g., 6:00 to 22:00)
+			for hour := period.StartHour; hour < period.EndHour; hour++ {
+				r.intervalByHour[hour] = period.IntervalMinutes
+			}
+		} else {
+			// Period spans midnight (e.g., 22:00 to 6:00)
+			for hour := period.StartHour; hour < 24; hour++ {
+				r.intervalByHour[hour] = period.IntervalMinutes
+			}
+			for hour := 0; hour < period.EndHour; hour++ {
+				r.intervalByHour[hour] = period.IntervalMinutes
+			}
 		}
 	}
-
-	// If no matching period found, return default interval
-	return r.PollIntervalMinutes
 }
 
-// isHourInPeriod checks if an hour falls within a period
-// Handles periods that span midnight (e.g., 22:00 to 6:00)
-func (r *RateLimitConfig) isHourInPeriod(hour, start, end int) bool {
-	if start <= end {
-		// Normal period (e.g., 6:00 to 22:00)
-		return hour >= start && hour < end
+// GetCurrentInterval returns the appropriate poll interval for the current time
+// Uses pre-computed lookup table for O(1) performance
+func (r *RateLimitConfig) GetCurrentInterval(currentHour int) int {
+	if currentHour < 0 || currentHour > 23 {
+		return r.PollIntervalMinutes
 	}
-	// Period spans midnight (e.g., 22:00 to 6:00)
-	return hour >= start || hour < end
+	return r.intervalByHour[currentHour]
 }
 

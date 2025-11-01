@@ -124,7 +124,8 @@ func (db *DB) UpsertVehicle(ctx context.Context, vehicle hyundaiapi.Vehicle) err
 // InsertVehicleStatus inserts a vehicle status record
 func (db *DB) InsertVehicleStatus(ctx context.Context, status *hyundaiapi.VehicleStatus) error {
 	// Create multiple points for different aspects of vehicle status
-	points := make([]*write.Point, 0)
+	// Pre-allocate with capacity 6 for better performance
+	points := make([]*write.Point, 0, 6)
 
 	// Engine status
 	points = append(points, influxdb2.NewPoint("vehicle_engine",
