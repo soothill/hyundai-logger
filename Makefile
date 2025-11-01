@@ -209,7 +209,7 @@ docker-build:
 	$(call check_container_runtime)
 	@echo "Building container image for current platform..."
 	@echo "Using $(NPROC) CPU cores for parallel build"
-	@if command -v docker >/dev/null 2>&1; then \
+	@if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
 		DOCKER_BUILDKIT=1 docker build \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--build-arg BUILDKIT_INLINE_CACHE=1 \
@@ -221,6 +221,18 @@ docker-build:
 			--build-arg GOMAXPROCS=$(NPROC) \
 			-t hyundai-logger:latest \
 			.; \
+	else \
+		echo ""; \
+		echo "❌ Error: Docker found but no permissions!"; \
+		echo ""; \
+		echo "Add yourself to the docker group:"; \
+		echo "  sudo usermod -aG docker $$USER"; \
+		echo "  newgrp docker"; \
+		echo ""; \
+		echo "Or use Podman instead:"; \
+		echo "  sudo apt-get install podman"; \
+		echo ""; \
+		exit 1; \
 	fi
 	@echo "✓ Container image built successfully"
 
