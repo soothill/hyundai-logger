@@ -30,10 +30,25 @@ rate_limit:
         end_hour: 6               # 6 AM
         interval_minutes: 15      # Poll every 15 minutes at night
 
-  # Charging Detection (Optional)
+  # Smart Charging Optimization (Recommended for EVs)
   charging:
-    enabled: true                 # Enable faster polling when charging
-    interval_minutes: 2           # Poll every 2 minutes when charging
+    enabled: true                        # Enable smart charging optimization
+    interval_minutes: 2                  # Legacy: basic charging interval (deprecated)
+
+    # Smart intervals based on charging phase
+    optimizer:
+      enabled: true                      # Enable intelligent phase detection
+      not_charging_minutes: 5            # Normal polling when not charging
+      fast_charge_minutes: 1             # Fast charging (>50 kW) - every 1 minute
+      normal_charge_minutes: 2           # Normal charging (7-50 kW) - every 2 minutes
+      trickle_minutes: 5                 # Trickle charge (<7 kW or >95%) - every 5 minutes
+      complete_minutes: 10               # Fully charged (100%) - every 10 minutes
+
+      # Thresholds for phase detection
+      fast_charge_power_kw: 50.0         # Power threshold for fast charging
+      trickle_charge_power_kw: 7.0       # Power threshold for trickle charging
+      trickle_battery_level: 95.0        # Battery % threshold for trickle mode
+      complete_battery_level: 99.5       # Battery % considered "complete"
 
 # InfluxDB Configuration
 database:
