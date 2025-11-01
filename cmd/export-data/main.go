@@ -68,7 +68,7 @@ func run() int {
 	}
 
 	if health.Status != "pass" {
-		fmt.Fprintf(os.Stderr, "InfluxDB health check failed: %s\n", health.Message)
+		fmt.Fprintf(os.Stderr, "InfluxDB health check failed: %s\n", *health.Message)
 		return exitError
 	}
 
