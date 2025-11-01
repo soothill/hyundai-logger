@@ -242,6 +242,108 @@ docker-build-multiarch:
 			--tag hyundai-logger:latest \
 			--load \
 			.; \
+	elif command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && ! docker ps >/dev/null 2>&1; then \
+		echo "⚠️  Docker buildx detected but lacks permissions"; \
+		echo ""; \
+		echo "Docker is installed with buildx support, but you don't have permission to access the Docker daemon."; \
+		echo ""; \
+		echo "To fix this, add your user to the docker group:"; \
+		echo "  sudo usermod -aG docker $$USER"; \
+		echo "  newgrp docker"; \
+		echo ""; \
+		echo "Or run with sudo:"; \
+		echo "  sudo make docker-build-multiarch"; \
+		echo ""; \
+		if command -v podman >/dev/null 2>&1; then \
+			echo "Falling back to Podman (recommended - no sudo required)..."; \
+			echo ""; \
+			echo "Checking for QEMU emulation support..."; \
+			if ! command -v qemu-aarch64-static >/dev/null 2>&1 && ! command -v qemu-arm-static >/dev/null 2>&1; then \
+				echo ""; \
+				echo "❌ Error: QEMU user-mode emulation not found!"; \
+				echo ""; \
+				echo "Multi-architecture builds require QEMU to emulate different CPU architectures."; \
+				echo ""; \
+				echo "Install QEMU:"; \
+				echo "  Ubuntu/Debian: sudo apt-get install -y qemu-user-static binfmt-support"; \
+				echo "  Fedora:        sudo dnf install -y qemu-user-static"; \
+				echo "  Arch Linux:    sudo pacman -S qemu-user-static qemu-user-static-binfmt"; \
+				echo ""; \
+				echo "After installation, restart the binfmt service:"; \
+				echo "  sudo systemctl restart systemd-binfmt.service"; \
+				echo ""; \
+				echo "Alternatively, build for your current platform only with:"; \
+				echo "  make docker-build"; \
+				echo ""; \
+				exit 1; \
+			fi; \
+			echo "✓ QEMU emulation available"; \
+			echo ""; \
+			echo "Pre-pulling base images for all architectures..."; \
+			echo "  Pulling golang:1.23-alpine for linux/amd64..."; \
+			podman pull --platform linux/amd64 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling alpine:latest for linux/amd64..."; \
+			podman pull --platform linux/amd64 docker.io/library/alpine:latest; \
+			echo "  Pulling golang:1.23-alpine for linux/arm64..."; \
+			podman pull --platform linux/arm64 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling alpine:latest for linux/arm64..."; \
+			podman pull --platform linux/arm64 docker.io/library/alpine:latest; \
+			echo "  Pulling golang:1.23-alpine for linux/arm/v7..."; \
+			podman pull --platform linux/arm/v7 docker.io/library/golang:1.23-alpine; \
+			echo "  Pulling alpine:latest for linux/arm/v7..."; \
+			podman pull --platform linux/arm/v7 docker.io/library/alpine:latest; \
+			echo "✓ All base images pre-pulled"; \
+			echo ""; \
+			echo "Cleaning up previous build artifacts..."; \
+			podman rmi hyundai-logger:amd64 2>/dev/null || true; \
+			podman rmi hyundai-logger:arm64 2>/dev/null || true; \
+			podman rmi hyundai-logger:armv7 2>/dev/null || true; \
+			podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
+			echo ""; \
+			echo "Building for linux/amd64..."; \
+			AMD64_ID=$$(podman build \
+				--jobs=$(NPROC) \
+				--platform linux/amd64 \
+				--build-arg BUILDPLATFORM=linux/amd64 \
+				--build-arg GOMAXPROCS=$(NPROC) \
+				--tag hyundai-logger:amd64 \
+				. | tail -1); \
+			echo "Built amd64: $$AMD64_ID"; \
+			echo ""; \
+			echo "Building for linux/arm64..."; \
+			ARM64_ID=$$(podman build \
+				--jobs=$(NPROC) \
+				--platform linux/arm64 \
+				--build-arg BUILDPLATFORM=linux/amd64 \
+				--build-arg GOMAXPROCS=$(NPROC) \
+				--tag hyundai-logger:arm64 \
+				. | tail -1); \
+			echo "Built arm64: $$ARM64_ID"; \
+			echo ""; \
+			echo "Building for linux/arm/v7..."; \
+			ARMV7_ID=$$(podman build \
+				--jobs=$(NPROC) \
+				--platform linux/arm/v7 \
+				--build-arg BUILDPLATFORM=linux/amd64 \
+				--build-arg GOMAXPROCS=$(NPROC) \
+				--tag hyundai-logger:armv7 \
+				. | tail -1); \
+			echo "Built armv7: $$ARMV7_ID"; \
+			echo ""; \
+			echo "Creating manifest list..."; \
+			podman manifest create hyundai-logger:latest; \
+			podman manifest add --arch amd64 hyundai-logger:latest containers-storage:localhost/hyundai-logger:amd64; \
+			podman manifest add --arch arm64 hyundai-logger:latest containers-storage:localhost/hyundai-logger:arm64; \
+			podman manifest add --arch arm hyundai-logger:latest containers-storage:localhost/hyundai-logger:armv7; \
+		else \
+			echo "❌ Error: Neither Docker (with permissions) nor Podman is available"; \
+			echo ""; \
+			echo "Please either:"; \
+			echo "  1. Fix Docker permissions (see above), or"; \
+			echo "  2. Install Podman: sudo apt-get install -y podman"; \
+			echo ""; \
+			exit 1; \
+		fi; \
 	elif command -v podman >/dev/null 2>&1; then \
 		echo "Using Podman for multi-arch build..."; \
 		echo ""; \
