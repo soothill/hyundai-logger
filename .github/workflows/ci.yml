@@ -102,7 +102,19 @@ jobs:
         with:
           args: '-no-fail -fmt sarif -out results.sarif ./...'
 
+      - name: Fix SARIF format issues
+        if: always()
+        run: |
+          # Fix malformed artifactChanges in Gosec SARIF output
+          if [ -f results.sarif ]; then
+            # Use jq to fix the artifactChanges field - ensure it's always an array
+            jq '(.runs[].results[]?.fixes[]?.artifactChanges | select(. != null and type != "array")) |= [.]' results.sarif > results-fixed.sarif || cp results.sarif results-fixed.sarif
+            mv results-fixed.sarif results.sarif
+          fi
+
       - name: Upload SARIF file
+        if: always()
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif
