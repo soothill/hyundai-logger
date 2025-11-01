@@ -44,7 +44,11 @@ func New(ctx context.Context, url, token, org, bucket string) (*DB, error) {
 	}
 
 	if health.Status != "pass" {
-		return nil, fmt.Errorf("InfluxDB health check failed: %s", health.Message)
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		return nil, fmt.Errorf("InfluxDB health check failed: %s", msg)
 	}
 
 	// Create write API once for reuse
@@ -121,8 +125,9 @@ func (db *DB) UpsertVehicle(ctx context.Context, vehicle hyundaiapi.Vehicle) err
 	return db.writeAPI.WritePoint(ctx, p)
 }
 
-// InsertVehicleStatus inserts a vehicle status record
-func (db *DB) InsertVehicleStatus(ctx context.Context, status *hyundaiapi.VehicleStatus) error {
+// CollectVehicleStatusPoints creates points for a vehicle status record without writing
+// Returns the points for batching
+func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*write.Point {
 	// Create multiple points for different aspects of vehicle status
 	// Pre-allocate with capacity 6 for better performance
 	points := make([]*write.Point, 0, 6)
@@ -228,17 +233,23 @@ func (db *DB) InsertVehicleStatus(ctx context.Context, status *hyundaiapi.Vehicl
 		status.Timestamp,
 	))
 
-	// Write all points
+	return points
+}
+
+// InsertVehicleStatus inserts a vehicle status record (kept for backward compatibility)
+func (db *DB) InsertVehicleStatus(ctx context.Context, status *hyundaiapi.VehicleStatus) error {
+	points := db.CollectVehicleStatusPoints(status)
 	return db.writeAPI.WritePoint(ctx, points...)
 }
 
-// InsertEVStatus inserts an EV status record
-func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID, vin string, evStatus *hyundaiapi.EVStatus) error {
+// CollectEVStatusPoint creates a point for EV status without writing
+// Returns nil if not an EV
+func (db *DB) CollectEVStatusPoint(timestamp time.Time, vehicleID, vin string, evStatus *hyundaiapi.EVStatus) *write.Point {
 	if evStatus == nil {
 		return nil // Not an EV
 	}
 
-	p := influxdb2.NewPoint("vehicle_ev",
+	return influxdb2.NewPoint("vehicle_ev",
 		map[string]string{
 			"vehicle_id": vehicleID,
 			"vin":        vin,
@@ -257,13 +268,20 @@ func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID
 		},
 		timestamp,
 	)
+}
 
+// InsertEVStatus inserts an EV status record (kept for backward compatibility)
+func (db *DB) InsertEVStatus(ctx context.Context, timestamp time.Time, vehicleID, vin string, evStatus *hyundaiapi.EVStatus) error {
+	p := db.CollectEVStatusPoint(timestamp, vehicleID, vin, evStatus)
+	if p == nil {
+		return nil
+	}
 	return db.writeAPI.WritePoint(ctx, p)
 }
 
-// InsertLocation inserts a vehicle location record
-func (db *DB) InsertLocation(ctx context.Context, location *hyundaiapi.Location) error {
-	p := influxdb2.NewPoint("vehicle_location",
+// CollectLocationPoint creates a point for vehicle location without writing
+func (db *DB) CollectLocationPoint(location *hyundaiapi.Location) *write.Point {
+	return influxdb2.NewPoint("vehicle_location",
 		map[string]string{
 			"vin": location.VIN,
 		},
@@ -276,8 +294,21 @@ func (db *DB) InsertLocation(ctx context.Context, location *hyundaiapi.Location)
 		},
 		location.Timestamp,
 	)
+}
 
+// InsertLocation inserts a vehicle location record (kept for backward compatibility)
+func (db *DB) InsertLocation(ctx context.Context, location *hyundaiapi.Location) error {
+	p := db.CollectLocationPoint(location)
 	return db.writeAPI.WritePoint(ctx, p)
+}
+
+// WriteBatch writes multiple points in a single batch operation
+// This is more efficient than individual writes
+func (db *DB) WriteBatch(ctx context.Context, points []*write.Point) error {
+	if len(points) == 0 {
+		return nil // Nothing to write
+	}
+	return db.writeAPI.WritePoint(ctx, points...)
 }
 
 // escapeFluxString escapes special characters for Flux queries
