@@ -39,8 +39,8 @@ else
     exit 1
 fi
 
-# Short description (first line of README or DOCKER_HUB.md)
-SHORT_DESCRIPTION="Hyundai Bluelink vehicle data logger with InfluxDB integration - Multi-arch support (amd64/arm64/armv7)"
+# Short description (Docker Hub has 100 byte limit)
+SHORT_DESCRIPTION="Hyundai Bluelink vehicle logger with InfluxDB - Multi-arch (amd64/arm64/armv7)"
 
 # Get authentication token
 echo "Authenticating with Docker Hub..."
