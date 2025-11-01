@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/soothill/hyundai-logger/internal/circuitbreaker"
 	"github.com/soothill/hyundai-logger/internal/retry"
 	"golang.org/x/time/rate"
 )
@@ -27,18 +28,19 @@ const (
 
 // Client represents a Hyundai Bluelink API client
 type Client struct {
-	httpClient   *http.Client
-	baseURL      string
-	username     string
-	password     string
-	pin          string
-	brand        string
-	region       string
-	accessToken  string
-	refreshToken string
-	vehicleID    string
-	rateLimiter  *rate.Limiter
-	retrier      *retry.Retrier
+	httpClient     *http.Client
+	baseURL        string
+	username       string
+	password       string
+	pin            string
+	brand          string
+	region         string
+	accessToken    string
+	refreshToken   string
+	vehicleID      string
+	rateLimiter    *rate.Limiter
+	retrier        *retry.Retrier
+	circuitBreaker *circuitbreaker.CircuitBreaker
 }
 
 // NewClient creates a new Hyundai API client
@@ -61,19 +63,28 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
+	// Create circuit breaker with custom config
+	cbConfig := circuitbreaker.Config{
+		MaxFailures:         3,                // Open after 3 consecutive failures
+		Timeout:             30 * time.Second, // Wait 30s before trying HalfOpen
+		HalfOpenMaxRequests: 1,                // Only 1 test request in HalfOpen
+	}
+	cb := circuitbreaker.New(cbConfig)
+
 	return &Client{
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: transport,
 		},
-		baseURL:     baseURL,
-		username:    username,
-		password:    password,
-		pin:         pin,
-		brand:       brand,
-		region:      region,
-		rateLimiter: limiter,
-		retrier:     retry.New(retryConfig),
+		baseURL:        baseURL,
+		username:       username,
+		password:       password,
+		pin:            pin,
+		brand:          brand,
+		region:         region,
+		rateLimiter:    limiter,
+		retrier:        retry.New(retryConfig),
+		circuitBreaker: cb,
 	}
 }
 
@@ -108,44 +119,53 @@ func getBaseURL(region, brand string) string {
 // doRequest performs an HTTP request with common headers and error handling
 // Does NOT include sensitive data in error messages
 // Accepts []byte body so it can be reused on retries (fixes retry bug)
+// Wrapped with circuit breaker to prevent cascading failures
 func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	if err := c.rateLimiter.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("rate limiter: %w", err)
-	}
+	var result []byte
 
-	var bodyReader io.Reader
-	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
+	// Execute through circuit breaker
+	err := c.circuitBreaker.Execute(func() error {
+		if err := c.rateLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("rate limiter: %w", err)
+		}
 
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
+		var bodyReader io.Reader
+		if body != nil {
+			bodyReader = bytes.NewReader(body)
+		}
 
-	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if c.accessToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-	}
+		req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
+		if err != nil {
+			return fmt.Errorf("creating request: %w", err)
+		}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("making request to %s: %w", endpoint, err)
-	}
-	defer resp.Body.Close()
+		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if c.accessToken != "" {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+		}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("making request to %s: %w", endpoint, err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		// Include endpoint for better debugging but not response body
-		return nil, fmt.Errorf("request failed: %s %s returned status %d", method, endpoint, resp.StatusCode)
-	}
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("reading response: %w", err)
+		}
 
-	return respBody, nil
+		if resp.StatusCode != http.StatusOK {
+			// Include endpoint for better debugging but not response body
+			return fmt.Errorf("request failed: %s %s returned status %d", method, endpoint, resp.StatusCode)
+		}
+
+		result = respBody
+		return nil
+	})
+
+	return result, err
 }
 
 // doRequestWithRetry wraps doRequest with retry logic
@@ -273,4 +293,14 @@ func (c *Client) GetOdometer(ctx context.Context, vehicleID string) (*Odometer, 
 	}
 
 	return &odometer, nil
+}
+
+// GetCircuitBreakerState returns the current circuit breaker state
+func (c *Client) GetCircuitBreakerState() circuitbreaker.State {
+	return c.circuitBreaker.GetState()
+}
+
+// GetCircuitBreakerStats returns circuit breaker statistics
+func (c *Client) GetCircuitBreakerStats() (state circuitbreaker.State, failures int, lastFailure time.Time) {
+	return c.circuitBreaker.GetStats()
 }

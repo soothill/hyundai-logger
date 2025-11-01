@@ -8,49 +8,50 @@ package logging
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
-// Logger provides structured logging with file and console output
+// Logger provides structured logging with zerolog
 type Logger struct {
-	infoLog  *log.Logger
-	errorLog *log.Logger
-	debugLog *log.Logger
-	file     *os.File
+	zlog zerolog.Logger
+	file *os.File
 }
 
 // Config represents logger configuration
 type Config struct {
-	LogFilePath string // Full path to log file (e.g., /var/log/hyundai-logger/hyundai-logger.log)
+	LogFilePath string // Full path to log file
 	LogLevel    string // debug, info, warn, error
 	LogToFile   bool   // Write to file
 	LogToStdout bool   // Write to stdout
 }
 
-// New creates a new logger instance
+// New creates a new structured logger with zerolog
 func New(cfg Config) (*Logger, error) {
 	var writers []io.Writer
 
-	// Add stdout if requested
+	// Add stdout if requested (with console formatting)
 	if cfg.LogToStdout {
-		writers = append(writers, os.Stdout)
+		consoleWriter := zerolog.ConsoleWriter{
+			Out:        os.Stdout,
+			TimeFormat: time.RFC3339,
+		}
+		writers = append(writers, consoleWriter)
 	}
 
 	var logFile *os.File
 	var err error
 
-	// Add file writer if requested
+	// Add file writer if requested (JSON format)
 	if cfg.LogToFile && cfg.LogFilePath != "" {
-		// Create log directory if it doesn't exist
 		logDir := filepath.Dir(cfg.LogFilePath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
 			return nil, fmt.Errorf("creating log directory: %w", err)
 		}
 
-		// Open log file with append mode
 		logFile, err = os.OpenFile(cfg.LogFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("opening log file: %w", err)
@@ -60,39 +61,53 @@ func New(cfg Config) (*Logger, error) {
 	}
 
 	if len(writers) == 0 {
-		writers = append(writers, os.Stdout) // Default to stdout
+		writers = append(writers, os.Stdout)
 	}
 
 	multiWriter := io.MultiWriter(writers...)
 
-	logger := &Logger{
-		infoLog:  log.New(multiWriter, "INFO:  ", log.Ldate|log.Ltime|log.LUTC),
-		errorLog: log.New(multiWriter, "ERROR: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile),
-		debugLog: log.New(multiWriter, "DEBUG: ", log.Ldate|log.Ltime|log.LUTC|log.Lshortfile),
-		file:     logFile,
+	// Configure zerolog
+	zerolog.TimeFieldFormat = time.RFC3339
+	zlog := zerolog.New(multiWriter).With().Timestamp().Logger()
+
+	// Set log level
+	switch cfg.LogLevel {
+	case "debug":
+		zlog = zlog.Level(zerolog.DebugLevel)
+	case "info":
+		zlog = zlog.Level(zerolog.InfoLevel)
+	case "warn":
+		zlog = zlog.Level(zerolog.WarnLevel)
+	case "error":
+		zlog = zlog.Level(zerolog.ErrorLevel)
+	default:
+		zlog = zlog.Level(zerolog.InfoLevel)
 	}
 
-	return logger, nil
+	return &Logger{
+		zlog: zlog,
+		file: logFile,
+	}, nil
 }
 
 // Info logs informational messages
 func (l *Logger) Info(format string, v ...interface{}) {
-	l.infoLog.Printf(format, v...)
+	l.zlog.Info().Msgf(format, v...)
 }
 
 // Error logs error messages
 func (l *Logger) Error(format string, v ...interface{}) {
-	l.errorLog.Printf(format, v...)
+	l.zlog.Error().Msgf(format, v...)
 }
 
 // Debug logs debug messages
 func (l *Logger) Debug(format string, v ...interface{}) {
-	l.debugLog.Printf(format, v...)
+	l.zlog.Debug().Msgf(format, v...)
 }
 
 // Fatal logs an error message and exits
 func (l *Logger) Fatal(format string, v ...interface{}) {
-	l.errorLog.Printf(format, v...)
+	l.zlog.Fatal().Msgf(format, v...)
 	l.Close()
 	os.Exit(1)
 }
@@ -105,96 +120,123 @@ func (l *Logger) Close() error {
 	return nil
 }
 
-// GetStdLogger returns a standard log.Logger for compatibility
-func (l *Logger) GetStdLogger() *log.Logger {
-	return l.infoLog
-}
+// Structured logging methods with context
 
-// LogStartup logs application startup information
+// LogStartup logs application startup with structured fields
 func (l *Logger) LogStartup(version, region, brand string, pollInterval int) {
-	l.Info("========================================")
-	l.Info("Hyundai Logger v%s", version)
-	l.Info("========================================")
-	l.Info("Started at: %s", time.Now().UTC().Format(time.RFC3339))
-	l.Info("Region: %s, Brand: %s", region, brand)
-	l.Info("Poll interval: %d minutes", pollInterval)
-	l.Info("========================================")
+	l.zlog.Info().
+		Str("version", version).
+		Str("region", region).
+		Str("brand", brand).
+		Int("poll_interval_minutes", pollInterval).
+		Msg("Hyundai Logger starting")
 }
 
 // LogShutdown logs application shutdown
 func (l *Logger) LogShutdown() {
-	l.Info("========================================")
-	l.Info("Hyundai Logger Shutdown")
-	l.Info("Stopped at: %s", time.Now().UTC().Format(time.RFC3339))
-	l.Info("========================================")
+	l.zlog.Info().Msg("Hyundai Logger shutting down")
 }
 
 // LogError logs an error with context
 func (l *Logger) LogError(operation string, err error) {
 	if err != nil {
-		l.Error("%s failed: %v", operation, err)
+		l.zlog.Error().
+			Str("operation", operation).
+			Err(err).
+			Msg("Operation failed")
 	}
 }
 
-// LogVehicleDiscovery logs vehicle discovery information
+// LogVehicleDiscovery logs vehicle discovery
 func (l *Logger) LogVehicleDiscovery(count int) {
-	l.Info("Found %d vehicle(s) in account", count)
+	l.zlog.Info().
+		Int("vehicle_count", count).
+		Msg("Discovered vehicles")
 }
 
 // LogVehicleInfo logs individual vehicle information
 func (l *Logger) LogVehicleInfo(year int, make, model, vin string) {
-	l.Info("Vehicle: %d %s %s (VIN: %s)", year, make, model, vin)
+	l.zlog.Info().
+		Int("year", year).
+		Str("make", make).
+		Str("model", model).
+		Str("vin", vin).
+		Msg("Vehicle registered")
 }
 
 // LogDataCollection logs data collection events
 func (l *Logger) LogDataCollection(vin string, odometer, fuelLevel float64) {
-	l.Info("Collected data for %s - Odometer: %.1f, Fuel: %.1f%%", vin, odometer, fuelLevel)
+	l.zlog.Info().
+		Str("vin", vin).
+		Float64("odometer", odometer).
+		Float64("fuel_level", fuelLevel).
+		Msg("Data collected")
 }
 
 // LogEVData logs EV-specific data
 func (l *Logger) LogEVData(vin string, batteryLevel float64, charging bool) {
-	chargingStatus := "not charging"
-	if charging {
-		chargingStatus = "charging"
-	}
-	l.Info("EV data for %s - Battery: %.1f%%, Status: %s", vin, batteryLevel, chargingStatus)
+	l.zlog.Info().
+		Str("vin", vin).
+		Float64("battery_level", batteryLevel).
+		Bool("charging", charging).
+		Msg("EV data collected")
 }
 
 // LogLocation logs location data
 func (l *Logger) LogLocation(vin string, lat, lon float64) {
-	l.Info("Location for %s - Lat: %.6f, Lon: %.6f", vin, lat, lon)
+	l.zlog.Info().
+		Str("vin", vin).
+		Float64("latitude", lat).
+		Float64("longitude", lon).
+		Msg("Location recorded")
 }
 
 // LogPollStart logs the start of a polling cycle
 func (l *Logger) LogPollStart() {
-	l.Info("Starting vehicle data poll...")
+	l.zlog.Info().Msg("Poll cycle starting")
 }
 
 // LogPollComplete logs the completion of a polling cycle
 func (l *Logger) LogPollComplete(duration time.Duration) {
-	l.Info("Poll completed in %.2f seconds", duration.Seconds())
+	l.zlog.Info().
+		Dur("duration", duration).
+		Float64("duration_seconds", duration.Seconds()).
+		Msg("Poll cycle complete")
 }
 
 // LogDatabaseInit logs database initialization
 func (l *Logger) LogDatabaseInit() {
-	l.Info("Initializing database schema...")
+	l.zlog.Info().Msg("Initializing database schema")
 }
 
 // LogDatabaseReady logs database ready state
 func (l *Logger) LogDatabaseReady() {
-	l.Info("Database connection established and ready")
+	l.zlog.Info().Msg("Database connection established")
 }
 
 // LogAuthentication logs authentication events
 func (l *Logger) LogAuthentication(success bool, region string) {
-	if success {
-		l.Info("Successfully authenticated with Hyundai API (%s region)", region)
-	} else {
-		l.Error("Failed to authenticate with Hyundai API (%s region)", region)
-	}
+	l.zlog.Info().
+		Bool("success", success).
+		Str("region", region).
+		Msg("API authentication attempt")
 }
 
-// LogRateLimit logs rate limiting events
+// LogRateLimit logs rate limiting configuration
 func (l *Logger) LogRateLimit(requestsPerHour int) {
-	l.Info("Rate limiting: %d requests per hour", requestsPerHour)
+	l.zlog.Info().
+		Int("requests_per_hour", requestsPerHour).
+		Msg("Rate limiting configured")
+}
+
+// WithContext returns a logger with additional context fields
+func (l *Logger) WithContext(fields map[string]interface{}) *Logger {
+	ctx := l.zlog.With()
+	for k, v := range fields {
+		ctx = ctx.Interface(k, v)
+	}
+	return &Logger{
+		zlog: ctx.Logger(),
+		file: l.file,
+	}
 }
