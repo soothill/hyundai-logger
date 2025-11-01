@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,9 +45,21 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 
 	baseURL := getBaseURL(region, brand)
 
+	// Configure HTTP transport for connection pooling and reuse
+	transport := &http.Transport{
+		MaxIdleConns:          10,               // Total idle connections
+		MaxIdleConnsPerHost:   5,                // Idle connections per host
+		MaxConnsPerHost:       10,               // Max connections per host
+		IdleConnTimeout:       90 * time.Second, // Keep connections alive
+		DisableKeepAlives:     false,            // Enable keep-alive
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:   30 * time.Second,
+			Transport: transport,
 		},
 		baseURL:     baseURL,
 		username:    username,
@@ -89,24 +102,31 @@ func getBaseURL(region, brand string) string {
 
 // doRequest performs an HTTP request with common headers and error handling
 // Does NOT include sensitive data in error messages
-func (c *Client) doRequest(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
+// Accepts []byte body so it can be reused on retries (fixes retry bug)
+func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
 	if err := c.rateLimiter.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("rate limiter: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if c.accessToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("making request: %w", err)
+		return nil, fmt.Errorf("making request to %s: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
 
@@ -116,16 +136,16 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body io
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// Don't include full body in error (may contain sensitive data)
-		// Only return status code for security
-		return nil, fmt.Errorf("request failed with status %d", resp.StatusCode)
+		// Include endpoint for better debugging but not response body
+		return nil, fmt.Errorf("request failed: %s %s returned status %d", method, endpoint, resp.StatusCode)
 	}
 
 	return respBody, nil
 }
 
 // doRequestWithRetry wraps doRequest with retry logic
-func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body io.Reader) ([]byte, error) {
+// Now accepts []byte instead of io.Reader so body can be reused on retries
+func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
 	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
 		return c.doRequest(ctx, method, endpoint, body)
 	})
@@ -153,7 +173,7 @@ func (c *Client) Authenticate(ctx context.Context) error {
 		data.Set("username", c.username)
 		data.Set("password", c.password)
 
-		respBody, err := c.doRequest(ctx, "POST", endpoint, strings.NewReader(data.Encode()))
+		respBody, err := c.doRequest(ctx, "POST", endpoint, []byte(data.Encode()))
 		if err != nil {
 			return fmt.Errorf("authentication: %w", err)
 		}

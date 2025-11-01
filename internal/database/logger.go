@@ -13,6 +13,8 @@ import (
 
 	"github.com/soothill/hyundai-logger/internal/alerts"
 	"github.com/soothill/hyundai-logger/internal/api"
+	"github.com/soothill/hyundai-logger/internal/metrics"
+	"golang.org/x/sync/errgroup"
 )
 
 // LoggerInterface defines the logging interface
@@ -64,6 +66,7 @@ type Logger struct {
 	stoppedCh           chan struct{}
 	alerter             *alerts.Alerter
 	errorTracker        *errorTracker
+	metrics             *metrics.Collector
 }
 
 // NewLogger creates a new data logger
@@ -81,6 +84,7 @@ func NewLogger(db *DB, apiClient *api.Client, rateLimitCfg RateLimitConfig, char
 		errorTracker: &errorTracker{
 			alertThreshold: alertThreshold,
 		},
+		metrics:      metrics.New(),
 	}
 }
 
@@ -108,6 +112,7 @@ func (l *Logger) Start(ctx context.Context) error {
 	}
 
 	l.logger.LogVehicleDiscovery(len(vehicles))
+	l.metrics.SetTotalVehicles(len(vehicles))
 
 	// Store vehicle information
 	for _, vehicle := range vehicles {
@@ -139,6 +144,7 @@ func (l *Logger) pollLoop(ctx context.Context, vehicles []api.Vehicle) {
 	// Do an immediate poll
 	l.pollAllVehicles(ctx, vehicles)
 
+	pollCount := 0
 	for {
 		// Calculate next poll interval dynamically
 		interval := l.calculatePollInterval()
@@ -150,13 +156,21 @@ func (l *Logger) pollLoop(ctx context.Context, vehicles []api.Vehicle) {
 		case <-ctx.Done():
 			timer.Stop()
 			l.logger.Info("Poll loop stopped due to context cancellation")
+			l.LogMetrics() // Log final metrics
 			return
 		case <-l.stopCh:
 			timer.Stop()
 			l.logger.Info("Poll loop stopped due to stop signal")
+			l.LogMetrics() // Log final metrics
 			return
 		case <-timer.C:
 			l.pollAllVehicles(ctx, vehicles)
+			pollCount++
+
+			// Log metrics every 10 polls
+			if pollCount%10 == 0 {
+				l.LogMetrics()
+			}
 		}
 	}
 }
@@ -186,31 +200,74 @@ func (l *Logger) calculatePollInterval() time.Duration {
 	return time.Duration(intervalMinutes) * time.Minute
 }
 
-// pollAllVehicles collects data from all vehicles
+// pollAllVehicles collects data from all vehicles in parallel for better performance
 func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	startTime := time.Now()
 	l.logger.LogPollStart()
+	l.metrics.RecordPollStart()
 
-	hasErrors := false
-	var lastErr error
+	// Use errgroup for parallel execution with proper error handling
+	g, gCtx := errgroup.WithContext(ctx)
 
+	// Channel to collect errors from parallel operations
+	errChan := make(chan error, len(vehicles))
+
+	// Launch goroutine for each vehicle
 	for _, vehicle := range vehicles {
-		if err := l.pollVehicle(ctx, vehicle); err != nil {
-			l.logger.Error("Error polling vehicle %s: %v", vehicle.VIN, err)
-			hasErrors = true
-			lastErr = err
-		}
+		vehicle := vehicle // Capture loop variable for goroutine
+		g.Go(func() error {
+			if err := l.pollVehicle(gCtx, vehicle); err != nil {
+				l.logger.Error("Error polling vehicle %s: %v", vehicle.VIN, err)
+				l.metrics.RecordVehiclePoll(vehicle.VIN, false)
+				errChan <- err
+				return err // Continue polling other vehicles despite error
+			}
+			l.metrics.RecordVehiclePoll(vehicle.VIN, true)
+			return nil
+		})
 	}
+
+	// Wait for all goroutines to complete
+	_ = g.Wait() // We handle errors through errChan
+	close(errChan)
 
 	duration := time.Since(startTime)
 	l.logger.LogPollComplete(duration)
+	l.logger.Info("Polled %d vehicles in parallel in %s", len(vehicles), duration.Round(time.Millisecond))
+
+	// Collect all errors
+	hasErrors := false
+	var lastErr error
+	errorCount := 0
+	for err := range errChan {
+		hasErrors = true
+		lastErr = err
+		errorCount++
+	}
+
+	if errorCount > 0 {
+		l.logger.Error("Completed poll with %d/%d vehicles reporting errors", errorCount, len(vehicles))
+	}
+
+	// Record poll metrics
+	l.metrics.RecordPollComplete(duration, !hasErrors)
 
 	// Track success/failure for alerting
 	if hasErrors {
 		l.recordError(lastErr)
+		l.metrics.RecordError(lastErr.Error())
 	} else {
 		l.recordSuccess()
 	}
+
+	// Update charging vehicle count
+	chargingCount := 0
+	for _, charging := range l.lastCharging {
+		if charging {
+			chargingCount++
+		}
+	}
+	l.metrics.UpdateVehiclesCharging(chargingCount)
 }
 
 // pollVehicle collects data from a single vehicle
@@ -234,7 +291,13 @@ func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
 	// Store EV status if available
 	if status.EV != nil {
 		// Update charging state tracking
+		wasCharging := l.lastCharging[vehicle.VIN]
 		l.lastCharging[vehicle.VIN] = status.EV.Charging
+
+		// Record charging detection
+		if status.EV.Charging && !wasCharging {
+			l.metrics.RecordChargingDetection()
+		}
 
 		if err := l.db.InsertEVStatus(ctx, status.Timestamp, vehicle.VehicleID, vehicle.VIN, status.EV); err != nil {
 			l.logger.LogError("Storing EV status", err)
@@ -264,28 +327,15 @@ func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
 	return nil
 }
 
-// GetStats returns statistics about collected data
-func (l *Logger) GetStats(ctx context.Context) (*Stats, error) {
-	// For InfluxDB, we'll query the vehicle_status measurement
-	// Note: This is a simplified implementation
-	// In a production system, you might want more sophisticated stats
-
-	stats := &Stats{
-		VehicleCount: 0,
-		StatusCount:  0,
-	}
-
-	// InfluxDB stats would require Flux queries which are more complex
-	// For now, return basic stats (this can be enhanced later)
-	return stats, nil
+// GetMetrics returns current application metrics
+func (l *Logger) GetMetrics() metrics.Stats {
+	return l.metrics.GetStats()
 }
 
-// Stats represents collection statistics
-type Stats struct {
-	VehicleCount int
-	StatusCount  int64
-	FirstRecord  time.Time
-	LastRecord   time.Time
+// LogMetrics logs the current metrics to the logger
+func (l *Logger) LogMetrics() {
+	stats := l.metrics.GetStats()
+	l.logger.Info("\n%s", metrics.FormatStats(stats))
 }
 
 // recordError tracks an error and triggers alerts if threshold is reached
