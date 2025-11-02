@@ -22,6 +22,9 @@ vendor/
 # Environment files
 .env
 
+# Authentication tokens
+.auth_tokens
+
 # Log files
 *.log
 

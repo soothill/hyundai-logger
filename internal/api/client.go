@@ -157,13 +157,66 @@ func (c *Client) buildRequest(ctx context.Context, method, endpoint string, body
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Set headers to mimic official Hyundai/Kia mobile apps to avoid bot detection
+	// These User-Agent strings are from real mobile apps
+	userAgent := c.getUserAgent()
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+
+	// Add app-specific headers based on region
+	c.setRegionSpecificHeaders(req)
+
 	if c.accessToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
 	}
 
 	return req, nil
+}
+
+// getUserAgent returns an appropriate User-Agent string based on brand and region
+func (c *Client) getUserAgent() string {
+	// Use realistic User-Agent strings from official mobile apps
+	switch strings.ToLower(c.brand) {
+	case "kia":
+		// Kia Connect mobile app User-Agent
+		return "okhttp/3.12.1"
+	case "hyundai":
+		// Hyundai Bluelink mobile app User-Agent
+		if c.region == "EU" {
+			return "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36"
+		}
+		return "okhttp/3.12.1"
+	case "genesis":
+		return "okhttp/3.12.1"
+	default:
+		return "okhttp/3.12.1"
+	}
+}
+
+// setRegionSpecificHeaders adds region-specific headers to avoid bot detection
+func (c *Client) setRegionSpecificHeaders(req *http.Request) {
+	switch c.region {
+	case "EU":
+		// EU-specific headers
+		req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
+		req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
+		req.Header.Set("Stamp", generateStamp())
+		req.Header.Set("clientId", "ANDROID")
+		req.Header.Set("Host", "prd.eu-ccapi.hyundai.com:8080")
+	case "US", "CA":
+		// North America-specific headers
+		req.Header.Set("clientId", "ANDROID")
+		req.Header.Set("Host", "api.telematics.hyundaiusa.com")
+	}
+}
+
+// generateStamp generates a timestamp-based stamp for EU region
+func generateStamp() string {
+	// EU API requires a timestamp-based stamp
+	return fmt.Sprintf("%d", time.Now().Unix())
 }
 
 // handleRateLimitError handles rate limit errors by adjusting the rate limiter and sleeping

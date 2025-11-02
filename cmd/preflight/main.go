@@ -99,11 +99,28 @@ func checkInfluxDB(cfg *config.Config) bool {
 	health, err := client.Health(ctx)
 	if err != nil {
 		printError("", err)
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      URL: %s\n", cfg.Database.URL)
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Check if InfluxDB is running:\n")
+		fmt.Printf("         curl -v %s/health\n", cfg.Database.URL)
+		fmt.Printf("      2. Verify URL in config.yaml is correct\n")
+		fmt.Printf("      3. Check if InfluxDB container is running:\n")
+		fmt.Printf("         docker ps | grep influx\n")
+		fmt.Printf("      4. Check InfluxDB logs:\n")
+		fmt.Printf("         docker logs influxdb\n")
 		return false
 	}
 
 	if health.Status != "pass" {
 		printError("", fmt.Errorf("InfluxDB health check failed: %s - %s", health.Status, *health.Message))
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Health Status: %s\n", health.Status)
+		fmt.Printf("      Message: %s\n", *health.Message)
 		return false
 	}
 	printSuccess("Connected")
@@ -113,6 +130,18 @@ func checkInfluxDB(cfg *config.Config) bool {
 	_, err = client.Ready(ctx)
 	if err != nil {
 		printError("", err)
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Organization: %s\n", cfg.Database.Organization)
+		fmt.Printf("      Token: %s\n", maskToken(cfg.Database.Token))
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Verify token has correct permissions\n")
+		fmt.Printf("      2. Check token in InfluxDB UI: %s\n", cfg.Database.URL)
+		fmt.Printf("      3. Generate new token if needed:\n")
+		fmt.Printf("         influx auth create --org %s \\\n", cfg.Database.Organization)
+		fmt.Printf("           --read-buckets --write-buckets\n")
 		return false
 	}
 	printSuccess("Authenticated")
@@ -124,12 +153,30 @@ func checkInfluxDB(cfg *config.Config) bool {
 	if err != nil {
 		printError("", err)
 		fmt.Println()
-		fmt.Printf("   %sℹ️  Bucket '%s' not found. You may need to create it:%s\n", colorYellow, cfg.Database.Bucket, colorReset)
-		fmt.Printf("      make init-db\n")
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Bucket: %s\n", cfg.Database.Bucket)
+		fmt.Printf("      Organization: %s\n", cfg.Database.Organization)
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Create the bucket:\n", colorYellow, colorReset)
+		fmt.Printf("      influx bucket create \\\n")
+		fmt.Printf("        --host %s \\\n", cfg.Database.URL)
+		fmt.Printf("        --token YOUR_TOKEN \\\n")
+		fmt.Printf("        --org %s \\\n", cfg.Database.Organization)
+		fmt.Printf("        --name %s \\\n", cfg.Database.Bucket)
+		fmt.Printf("        --retention 90d\n")
 		return false
 	}
 	if bucket == nil {
 		printError("", fmt.Errorf("bucket '%s' not found", cfg.Database.Bucket))
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Create the bucket:\n", colorYellow, colorReset)
+		fmt.Printf("      influx bucket create \\\n")
+		fmt.Printf("        --host %s \\\n", cfg.Database.URL)
+		fmt.Printf("        --token YOUR_TOKEN \\\n")
+		fmt.Printf("        --org %s \\\n", cfg.Database.Organization)
+		fmt.Printf("        --name %s \\\n", cfg.Database.Bucket)
+		fmt.Printf("        --retention 90d\n")
 		return false
 	}
 	printSuccess(fmt.Sprintf("Bucket '%s' exists", cfg.Database.Bucket))
@@ -145,6 +192,13 @@ func checkInfluxDB(cfg *config.Config) bool {
 	err = writeAPI.WritePoint(ctx, testPoint)
 	if err != nil {
 		printError("", err)
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Token may not have write permissions\n")
+		fmt.Printf("      Generate a new token with write access in InfluxDB UI\n")
 		return false
 	}
 	printSuccess("Write test successful")
@@ -164,67 +218,144 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 	fmt.Print("   ⏳ Validating credentials... ")
 	if cfg.Hyundai.Username == "" || cfg.Hyundai.Password == "" {
 		printError("", fmt.Errorf("username or password not set"))
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Set credentials in your config.yaml:\n", colorYellow, colorReset)
+		fmt.Printf("      hyundai:\n")
+		fmt.Printf("        username: \"your.email@example.com\"\n")
+		fmt.Printf("        password: \"your-password\"\n")
 		return false
 	}
 	if cfg.Hyundai.Brand == "" {
 		printError("", fmt.Errorf("brand not set"))
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Set brand in your config.yaml (hyundai, kia, or genesis)\n", colorYellow, colorReset)
 		return false
 	}
 	if cfg.Hyundai.Region == "" {
 		printError("", fmt.Errorf("region not set"))
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Set region in your config.yaml (na, eu, kr, etc.)\n", colorYellow, colorReset)
 		return false
 	}
 	printSuccess("Credentials configured")
 
-	// Test 2: Check API endpoint reachability
-	fmt.Print("   ⏳ Testing API endpoint... ")
+	// Test 2: Check basic internet connectivity first
+	fmt.Print("   ⏳ Testing internet connectivity... ")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Test with a reliable public endpoint
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctx, "tcp", "1.1.1.1:443")
+	if err != nil {
+		printError("", fmt.Errorf("no internet connection"))
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Cannot reach internet (tested with 1.1.1.1:443)\n")
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Check your network connection\n")
+		fmt.Printf("      2. Verify DNS is working: nslookup google.com\n")
+		fmt.Printf("      3. Check if proxy is required: echo $HTTP_PROXY\n")
+		fmt.Printf("      4. Test basic connectivity: ping 1.1.1.1\n")
+		return false
+	}
+	conn.Close()
+	printSuccess("Internet reachable")
+
+	// Test 3: Check API endpoint reachability
+	fmt.Print("   ⏳ Testing Hyundai API endpoint... ")
 
 	// Determine API endpoint based on region
 	var apiHost string
+	var apiHostname string
 	switch cfg.Hyundai.Region {
 	case "na":
-		apiHost = "api.telematics.hyundaiusa.com:443"
+		apiHostname = "api.telematics.hyundaiusa.com"
+		apiHost = apiHostname + ":443"
 	case "eu":
-		apiHost = "prd.eu-ccapi.hyundai.com:443"
+		apiHostname = "prd.eu-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "kr":
-		apiHost = "prd.kr-ccapi.hyundai.com:443"
+		apiHostname = "prd.kr-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "cn":
-		apiHost = "prd.cn-ccapi.hyundai.com:443"
+		apiHostname = "prd.cn-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "au":
-		apiHost = "prd.au-ccapi.hyundai.com:443"
+		apiHostname = "prd.au-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "jp":
-		apiHost = "prd.jp-ccapi.hyundai.com:443"
+		apiHostname = "prd.jp-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "in":
-		apiHost = "prd.in-ccapi.hyundai.com:443"
+		apiHostname = "prd.in-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	case "br":
-		apiHost = "prd.br-ccapi.hyundai.com:443"
+		apiHostname = "prd.br-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	default:
-		apiHost = "prd.eu-ccapi.hyundai.com:443"
+		apiHostname = "prd.eu-ccapi.hyundai.com"
+		apiHost = apiHostname + ":443"
 	}
 
 	// For Kia, adjust endpoint
 	if cfg.Hyundai.Brand == "kia" {
-		apiHost = "prd.eu-ccapi.kia.com:443"
+		apiHostname = "prd.eu-ccapi.kia.com"
+		apiHost = apiHostname + ":443"
 	}
 
-	// Test TCP connection to API endpoint (more reliable than HTTP request)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// Test DNS resolution first
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
 
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", apiHost)
+	ips, err := net.DefaultResolver.LookupIP(ctx2, "ip", apiHostname)
 	if err != nil {
-		printError("", err)
+		printError("", fmt.Errorf("DNS resolution failed"))
 		fmt.Println()
-		fmt.Printf("   %sℹ️  Could not reach API endpoint. Possible causes:%s\n", colorYellow, colorReset)
-		fmt.Printf("      - Internet connectivity issues\n")
-		fmt.Printf("      - Firewall blocking outbound HTTPS (port 443)\n")
-		fmt.Printf("      - VPN or proxy configuration\n")
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Cannot resolve hostname: %s\n", apiHostname)
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Test DNS resolution: nslookup %s\n", apiHostname)
+		fmt.Printf("      2. Try alternative DNS: dig @8.8.8.8 %s\n", apiHostname)
+		fmt.Printf("      3. Check /etc/resolv.conf for DNS servers\n")
+		return false
+	}
+
+	// Test TCP connection to API endpoint
+	ctx3, cancel3 := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel3()
+
+	conn, err = dialer.DialContext(ctx3, "tcp", apiHost)
+	if err != nil {
+		printError("", fmt.Errorf("connection failed"))
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Hostname: %s\n", apiHostname)
+		fmt.Printf("      Resolved IPs: %v\n", ips)
+		fmt.Printf("      Port: 443 (HTTPS)\n")
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Test direct connection:\n")
+		fmt.Printf("         curl -v --connect-timeout 10 https://%s\n", apiHostname)
+		fmt.Printf("      2. Check firewall rules:\n")
+		fmt.Printf("         sudo iptables -L -n | grep 443\n")
+		fmt.Printf("      3. Test with netcat:\n")
+		fmt.Printf("         nc -zv %s 443\n", apiHostname)
+		fmt.Printf("      4. Check if running in restricted network/container\n")
+		fmt.Printf("      5. Try from different network to rule out ISP blocking\n")
+		fmt.Println()
+		fmt.Printf("   %sNote:%s The API endpoint may have geographic or IP-based restrictions.\n", colorYellow, colorReset)
+		fmt.Printf("         If running in Docker, ensure network mode allows external access.\n")
 		return false
 	}
 	conn.Close()
 
-	printSuccess(fmt.Sprintf("API endpoint reachable (%s)", apiHost))
+	printSuccess(fmt.Sprintf("API endpoint reachable (%s -> %v)", apiHostname, ips[0]))
 
 	fmt.Println()
 	fmt.Printf("   %s⚠️  Note: Full API authentication test requires actual login attempt%s\n", colorYellow, colorReset)
@@ -251,4 +382,11 @@ func maskString(s string) string {
 		return "****"
 	}
 	return s[:2] + "****" + s[len(s)-2:]
+}
+
+func maskToken(s string) string {
+	if len(s) <= 8 {
+		return "********"
+	}
+	return s[:4] + "..." + s[len(s)-4:]
 }

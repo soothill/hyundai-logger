@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db preflight clean test install fmt lint build-all help docker-build docker-build-multiarch docker-push docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
+.PHONY: build run init-db preflight manual-auth clean test install fmt lint build-all help docker-build docker-build-multiarch docker-push docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -97,6 +97,11 @@ init-db:
 preflight:
 	@echo "Running preflight checks..."
 	@go run cmd/preflight/main.go
+
+# Manual token generation helper (for captcha bypass)
+manual-auth:
+	@echo "Starting manual authentication helper..."
+	@./scripts/manual-token-helper.sh
 
 # Clean all build artifacts, images, and caches to free up disk space
 clean clean-all:
@@ -198,6 +203,7 @@ help:
 	@echo "  run           - Run the application"
 	@echo "  init-db       - Initialize the database schema"
 	@echo "  preflight     - Run preflight checks (test InfluxDB and API connectivity)"
+	@echo "  manual-auth   - Manual authentication helper (for captcha bypass)"
 	@echo "  clean         - Deep clean: remove all images, caches, and build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  install       - Install dependencies"
