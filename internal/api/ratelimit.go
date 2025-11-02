@@ -101,3 +101,60 @@ func getRateLimitHeaders(resp *http.Response) (limit, remaining, reset string) {
 
 	return
 }
+
+// RateLimitInfo contains detailed rate limit information
+type RateLimitInfo struct {
+	Limit      string
+	Remaining  string
+	Reset      string
+	RetryAfter time.Duration
+	StatusCode int
+}
+
+// ExtractRateLimitInfo extracts comprehensive rate limit information from a response
+func ExtractRateLimitInfo(resp *http.Response) *RateLimitInfo {
+	if resp == nil {
+		return nil
+	}
+
+	limit, remaining, reset := getRateLimitHeaders(resp)
+
+	retryAfter := time.Duration(0)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+	}
+
+	return &RateLimitInfo{
+		Limit:      limit,
+		Remaining:  remaining,
+		Reset:      reset,
+		RetryAfter: retryAfter,
+		StatusCode: resp.StatusCode,
+	}
+}
+
+// ShouldBackoff determines if we should back off based on rate limit headers
+// Returns true if remaining requests are running low (below 20% of limit)
+func ShouldBackoff(limit, remaining string) bool {
+	if limit == "" || remaining == "" {
+		return false
+	}
+
+	limitVal, err := strconv.Atoi(limit)
+	if err != nil {
+		return false // Invalid limit value
+	}
+
+	remainingVal, err := strconv.Atoi(remaining)
+	if err != nil {
+		return false // Invalid remaining value
+	}
+
+	if limitVal == 0 {
+		return false
+	}
+
+	// Back off if we're below 20% of our quota
+	threshold := float64(limitVal) * 0.2
+	return float64(remainingVal) < threshold
+}
