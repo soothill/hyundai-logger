@@ -417,7 +417,6 @@ type mockChecker struct {
 	name    string
 	status  Status
 	message string
-	err     error
 }
 
 func (m *mockChecker) Name() string {
