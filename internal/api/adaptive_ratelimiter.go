@@ -91,8 +91,14 @@ func (a *AdaptiveRateLimiter) HandleRateLimitResponse(retryAfter time.Duration, 
 func (a *AdaptiveRateLimiter) adjustBasedOnHeaders(remaining, limit string) {
 	// Try to parse the headers
 	var remainingVal, limitVal int
-	fmt.Sscanf(remaining, "%d", &remainingVal)
-	fmt.Sscanf(limit, "%d", &limitVal)
+
+	// Use strconv.Atoi for proper error handling
+	if _, err := fmt.Sscanf(remaining, "%d", &remainingVal); err != nil {
+		return // Invalid remaining value, skip adjustment
+	}
+	if _, err := fmt.Sscanf(limit, "%d", &limitVal); err != nil {
+		return // Invalid limit value, skip adjustment
+	}
 
 	if limitVal > 0 {
 		// Calculate a safe rate: use 80% of the remaining quota

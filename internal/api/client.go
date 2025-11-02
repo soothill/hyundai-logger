@@ -37,7 +37,6 @@ type Client struct {
 	region         string
 	accessToken    string
 	refreshToken   string
-	vehicleID      string
 	rateLimiter    *AdaptiveRateLimiter
 	retrier        *retry.Retrier
 	circuitBreaker *circuitbreaker.CircuitBreaker

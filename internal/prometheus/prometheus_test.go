@@ -187,10 +187,10 @@ func TestStartMetricsServer_HealthEndpoints(t *testing.T) {
 		return nil // Healthy
 	}
 
-	// Verify function signature accepts the parameters
+	// Verify function works correctly
 	// (actual server test would require goroutine and port management)
-	if dbHealthCheck == nil {
-		t.Error("Database health check should be callable")
+	if err := dbHealthCheck(context.Background()); err != nil {
+		t.Errorf("Database health check should succeed, got error: %v", err)
 	}
 
 	if collector == nil {
