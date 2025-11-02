@@ -114,7 +114,7 @@ func MetricsHandler(collector *metrics.Collector) http.HandlerFunc {
 
 		// Write buffered output in a single operation
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		w.Write([]byte(buf.String()))
+		_, _ = w.Write([]byte(buf.String()))
 	}
 }
 
