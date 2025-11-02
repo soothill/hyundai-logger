@@ -363,7 +363,9 @@ func TestAutoReload(t *testing.T) {
 	defer cancel()
 
 	// Start watching in background
-	go reloader.Start(ctx)
+	go func() {
+		_ = reloader.Start(ctx)
+	}()
 
 	// Wait for watcher to start
 	time.Sleep(200 * time.Millisecond)
@@ -417,7 +419,9 @@ func TestDebounce(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go reloader.Start(ctx)
+	go func() {
+		_ = reloader.Start(ctx)
+	}()
 
 	time.Sleep(200 * time.Millisecond)
 

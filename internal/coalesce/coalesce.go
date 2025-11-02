@@ -272,7 +272,9 @@ func (bc *BatchCoalescer) flush() {
 
 	// Process batch
 	for _, key := range bc.batch {
-		go bc.coalescer.Do(context.Background(), key)
+		go func(k string) {
+			_, _ = bc.coalescer.Do(context.Background(), k)
+		}(key)
 	}
 
 	// Reset batch

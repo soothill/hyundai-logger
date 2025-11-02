@@ -254,9 +254,9 @@ func TestListKeys(t *testing.T) {
 	manager := NewAPIKeyManager()
 
 	// Create multiple keys
-	manager.CreateKey("key1", "First Key", []string{ScopeReadVehicles}, nil)
-	manager.CreateKey("key2", "Second Key", []string{ScopeReadData}, nil)
-	manager.CreateKey("key3", "Third Key", []string{ScopeAll}, nil)
+	_, _ = manager.CreateKey("key1", "First Key", []string{ScopeReadVehicles}, nil)
+	_, _ = manager.CreateKey("key2", "Second Key", []string{ScopeReadData}, nil)
+	_, _ = manager.CreateKey("key3", "Third Key", []string{ScopeAll}, nil)
 
 	keys := manager.ListKeys()
 
@@ -279,7 +279,7 @@ func TestListKeys(t *testing.T) {
 func TestGetKeyByName(t *testing.T) {
 	manager := NewAPIKeyManager()
 
-	manager.CreateKey("findme", "Find Me", []string{ScopeAll}, nil)
+	_, _ = manager.CreateKey("findme", "Find Me", []string{ScopeAll}, nil)
 
 	key, err := manager.GetKeyByName("findme")
 	if err != nil {

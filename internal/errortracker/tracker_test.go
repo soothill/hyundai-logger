@@ -112,7 +112,7 @@ func TestTracker_GetStats(t *testing.T) {
 	tracker := New(5)
 
 	// Initial state
-	consecutiveErrors, lastErr, lastSuccess, errorTime := tracker.GetStats()
+	consecutiveErrors, lastErr, _, _ := tracker.GetStats()
 	if consecutiveErrors != 0 {
 		t.Errorf("expected 0 initial errors, got %d", consecutiveErrors)
 	}
@@ -126,6 +126,7 @@ func TestTracker_GetStats(t *testing.T) {
 	tracker.RecordError(testErr)
 	afterError := time.Now()
 
+	var errorTime time.Time
 	consecutiveErrors, lastErr, _, errorTime = tracker.GetStats()
 	if consecutiveErrors != 1 {
 		t.Errorf("expected 1 consecutive error, got %d", consecutiveErrors)
@@ -142,6 +143,7 @@ func TestTracker_GetStats(t *testing.T) {
 	tracker.RecordSuccess()
 	afterSuccess := time.Now()
 
+	var lastSuccess time.Time
 	consecutiveErrors, _, lastSuccess, _ = tracker.GetStats()
 	if consecutiveErrors != 0 {
 		t.Errorf("expected 0 errors after success, got %d", consecutiveErrors)
@@ -205,7 +207,7 @@ func TestTracker_ThreadSafety(t *testing.T) {
 		go func() {
 			for j := 0; j < 100; j++ {
 				tracker.GetConsecutiveErrors()
-				tracker.GetStats()
+				_, _, _, _ = tracker.GetStats()
 			}
 			done <- true
 		}()

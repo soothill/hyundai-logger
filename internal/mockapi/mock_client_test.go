@@ -480,7 +480,7 @@ func TestBatteryFullStopsCharging(t *testing.T) {
 func BenchmarkGetVehicleStatus(b *testing.B) {
 	client := NewMockClient(DefaultMockConfig())
 	ctx := context.Background()
-	client.Authenticate(ctx)
+	_ = client.Authenticate(ctx)
 	vehicles, _ := client.GetVehicles(ctx)
 	vehicleID := vehicles[0].VehicleID
 

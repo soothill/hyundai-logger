@@ -47,7 +47,7 @@ func NewMockAPIServer() *MockAPIServer {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 
 	// Get vehicles endpoint
@@ -75,7 +75,7 @@ func NewMockAPIServer() *MockAPIServer {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(vehicles)
+		_ = json.NewEncoder(w).Encode(vehicles)
 	})
 
 	// Get vehicle status endpoint
@@ -157,7 +157,7 @@ func NewMockAPIServer() *MockAPIServer {
 				}
 
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(status)
+				_ = json.NewEncoder(w).Encode(status)
 				return
 			}
 
@@ -178,7 +178,7 @@ func NewMockAPIServer() *MockAPIServer {
 				}
 
 				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(location)
+				_ = json.NewEncoder(w).Encode(location)
 				return
 			}
 		}
@@ -248,7 +248,7 @@ func TestAPIRetryLogic(t *testing.T) {
 			"access_token":  "test_token",
 			"refresh_token": "test_refresh",
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 

@@ -223,7 +223,7 @@ func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	}
 
 	// Wait for all goroutines to complete
-	g.Wait()
+	_ = g.Wait()
 	close(resultChan)
 
 	// Collect all points and errors
@@ -343,17 +343,6 @@ func (l *Logger) pollVehicleCollectPoints(ctx context.Context, vehicle api.Vehic
 	}
 
 	return allPoints, nil
-}
-
-// pollVehicle collects data from a single vehicle (kept for backward compatibility)
-func (l *Logger) pollVehicle(ctx context.Context, vehicle api.Vehicle) error {
-	points, err := l.pollVehicleCollectPoints(ctx, vehicle)
-	if err != nil {
-		return err
-	}
-
-	// Write points immediately (non-batched)
-	return l.db.WriteBatch(ctx, points)
 }
 
 // GetMetrics returns current application metrics

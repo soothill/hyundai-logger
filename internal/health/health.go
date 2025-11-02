@@ -192,7 +192,7 @@ func (h *Handler) HTTPHandler() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}
 }
 
@@ -200,7 +200,7 @@ func (h *Handler) HTTPHandler() http.HandlerFunc {
 func (h *Handler) LivenessHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}
 }
 
@@ -214,10 +214,10 @@ func (h *Handler) ReadinessHandler() http.HandlerFunc {
 
 		if response.Status == StatusHealthy {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("READY"))
+			_, _ = w.Write([]byte("READY"))
 		} else {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("NOT READY"))
+			_, _ = w.Write([]byte("NOT READY"))
 		}
 	}
 }

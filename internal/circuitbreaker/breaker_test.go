@@ -72,7 +72,7 @@ func TestCircuitBreaker_OpenAfterMaxFailures(t *testing.T) {
 
 	// First 2 failures should keep circuit closed
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 		if cb.GetState() != StateClosed {
@@ -81,7 +81,7 @@ func TestCircuitBreaker_OpenAfterMaxFailures(t *testing.T) {
 	}
 
 	// 3rd failure should open the circuit
-	cb.Execute(func() error {
+	_ = cb.Execute(func() error {
 		return testErr
 	})
 
@@ -101,7 +101,7 @@ func TestCircuitBreaker_OpenCircuitBlocksRequests(t *testing.T) {
 	// Trigger circuit to open
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -131,7 +131,7 @@ func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 	// Open the circuit
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -145,7 +145,7 @@ func TestCircuitBreaker_HalfOpenAfterTimeout(t *testing.T) {
 
 	// Next request should transition to HalfOpen
 	executed := false
-	cb.Execute(func() error {
+	_ = cb.Execute(func() error {
 		executed = true
 		return nil
 	})
@@ -166,7 +166,7 @@ func TestCircuitBreaker_HalfOpenSuccessClosesCircuit(t *testing.T) {
 	// Open the circuit
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -199,7 +199,7 @@ func TestCircuitBreaker_HalfOpenFailureOpensCircuit(t *testing.T) {
 	// Open the circuit
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -208,7 +208,7 @@ func TestCircuitBreaker_HalfOpenFailureOpensCircuit(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Execute with failure in HalfOpen - should go back to Open
-	cb.Execute(func() error {
+	_ = cb.Execute(func() error {
 		return testErr
 	})
 
@@ -228,7 +228,7 @@ func TestCircuitBreaker_HalfOpenMaxRequests(t *testing.T) {
 	// Open the circuit
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -278,7 +278,7 @@ func TestCircuitBreaker_Reset(t *testing.T) {
 	// Open the circuit
 	testErr := errors.New("test error")
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
@@ -321,14 +321,14 @@ func TestCircuitBreaker_OnStateChange(t *testing.T) {
 
 	// Open the circuit (Closed -> Open)
 	for i := 0; i < 2; i++ {
-		cb.Execute(func() error {
+		_ = cb.Execute(func() error {
 			return testErr
 		})
 	}
 
 	// Wait and trigger HalfOpen (Open -> HalfOpen)
 	time.Sleep(100 * time.Millisecond)
-	cb.Execute(func() error {
+	_ = cb.Execute(func() error {
 		return nil // Success to go to Closed
 	})
 	// HalfOpen -> Closed
