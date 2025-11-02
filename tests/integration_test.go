@@ -6,6 +6,7 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/soothill/hyundai-logger/internal/api"
+	"github.com/soothill/hyundai-logger/internal/circuitbreaker"
 	"github.com/soothill/hyundai-logger/internal/retry"
 )
 
@@ -369,4 +371,66 @@ func TestMockServerBasics(t *testing.T) {
 	if vehiclesResp.Vehicles[0].VIN != "5NPE24AF1KH123456" {
 		t.Errorf("Expected VIN 5NPE24AF1KH123456, got %s", vehiclesResp.Vehicles[0].VIN)
 	}
+}
+
+// TestCircuitBreakerRetryIntegration verifies that circuit breaker and retry work together correctly
+// This test ensures that retries don't cause retry storms when the circuit is open
+func TestCircuitBreakerRetryIntegration(t *testing.T) {
+	// Create a mock server that fails consistently
+	failureCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		failureCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	// Create retry config with 3 attempts
+	retryConfig := retry.Config{
+		MaxAttempts:       3,
+		InitialDelayMs:    10,
+		MaxDelayMs:        100,
+		BackoffMultiplier: 2.0,
+	}
+
+	// Create circuit breaker config with 3 max failures
+	client := api.NewClient("test", "test", "1234", "hyundai", "US", 1000, retryConfig)
+	client.SetBaseURL(server.URL)
+	client.DisableCache()
+
+	ctx := context.Background()
+
+	// First call should fail and retry 3 times
+	_, err := client.GetVehicles(ctx)
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	// After 3 retries (each failing), we should have 3 failures
+	// Circuit breaker should now be open after 3 consecutive failures
+	expectedFailures := 3 // 3 retries on the first request
+	if failureCount != expectedFailures {
+		t.Logf("Warning: Expected %d failures, got %d (circuit breaker may have opened earlier)", expectedFailures, failureCount)
+	}
+
+	// Get circuit breaker state
+	state, failures, _ := client.GetCircuitBreakerStats()
+
+	// Circuit should be open after 3 failures
+	if state != circuitbreaker.StateOpen {
+		t.Errorf("Expected circuit to be Open, got %v (failures: %d)", state, failures)
+	}
+
+	// Second call should fail immediately without retries (circuit is open)
+	initialFailureCount := failureCount
+	_, err = client.GetVehicles(ctx)
+	if err == nil {
+		t.Error("Expected error when circuit is open, got nil")
+	}
+
+	// Should not have attempted any new requests (circuit is open)
+	if failureCount != initialFailureCount {
+		t.Errorf("Circuit breaker did not prevent retry storm: %d new failures when circuit should be open", failureCount-initialFailureCount)
+	}
+
+	t.Logf("Circuit breaker successfully prevented retry storm after %d failures", failureCount)
 }

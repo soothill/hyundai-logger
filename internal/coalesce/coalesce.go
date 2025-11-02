@@ -255,13 +255,15 @@ func (bc *BatchCoalescer) Add(key string) {
 	}
 
 	// Set timer for window
-	if bc.timer == nil {
-		bc.timer = time.AfterFunc(bc.window, func() {
-			bc.mu.Lock()
-			bc.flush()
-			bc.mu.Unlock()
-		})
+	// Stop any existing timer to prevent leaks before creating a new one
+	if bc.timer != nil {
+		bc.timer.Stop()
 	}
+	bc.timer = time.AfterFunc(bc.window, func() {
+		bc.mu.Lock()
+		bc.flush()
+		bc.mu.Unlock()
+	})
 }
 
 // flush processes the current batch

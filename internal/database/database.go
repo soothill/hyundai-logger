@@ -167,11 +167,11 @@ func (db *DB) UpsertVehicle(ctx context.Context, vehicle hyundaiapi.Vehicle) err
 // Returns the points for batching
 func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*write.Point {
 	// Create multiple points for different aspects of vehicle status
-	// Pre-allocate with capacity 6 for better performance
-	points := make([]*write.Point, 0, 6)
+	// Pre-allocate with exact size and use index assignment for better performance
+	points := make([]*write.Point, 6)
 
 	// Engine status
-	points = append(points, influxdb2.NewPoint("vehicle_engine",
+	points[0] = influxdb2.NewPoint("vehicle_engine",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -183,10 +183,10 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"range_miles":       status.Engine.RangeMiles,
 		},
 		status.Timestamp,
-	))
+	)
 
 	// Climate status
-	points = append(points, influxdb2.NewPoint("vehicle_climate",
+	points[1] = influxdb2.NewPoint("vehicle_climate",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -201,10 +201,10 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"fan_speed":       status.Climate.FanSpeed,
 		},
 		status.Timestamp,
-	))
+	)
 
 	// Doors status
-	points = append(points, influxdb2.NewPoint("vehicle_doors",
+	points[2] = influxdb2.NewPoint("vehicle_doors",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -218,10 +218,10 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"hood":        status.Doors.Hood,
 		},
 		status.Timestamp,
-	))
+	)
 
 	// Battery status (12V)
-	points = append(points, influxdb2.NewPoint("vehicle_battery",
+	points[3] = influxdb2.NewPoint("vehicle_battery",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -232,10 +232,10 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"warning_light": status.Battery.WarningLight,
 		},
 		status.Timestamp,
-	))
+	)
 
 	// Tire status
-	points = append(points, influxdb2.NewPoint("vehicle_tires",
+	points[4] = influxdb2.NewPoint("vehicle_tires",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -251,10 +251,10 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"warning_light":     status.Tire.WarningLight,
 		},
 		status.Timestamp,
-	))
+	)
 
 	// General status
-	points = append(points, influxdb2.NewPoint("vehicle_status",
+	points[5] = influxdb2.NewPoint("vehicle_status",
 		map[string]string{
 			"vin": status.VIN,
 		},
@@ -269,7 +269,7 @@ func (db *DB) CollectVehicleStatusPoints(status *hyundaiapi.VehicleStatus) []*wr
 			"washer_warning":      status.Washer.WarningLight,
 		},
 		status.Timestamp,
-	))
+	)
 
 	return points
 }
@@ -384,6 +384,7 @@ func (db *DB) GetLatestStatus(ctx context.Context, vehicleID string) (*hyundaiap
 	if err != nil {
 		return nil, err
 	}
+	defer result.Close()
 
 	if !result.Next() {
 		return nil, nil // No data found

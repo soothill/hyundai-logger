@@ -360,3 +360,23 @@ func BenchmarkAdaptiveRateLimiter_HandleRateLimitResponse(b *testing.B) {
 		limiter.HandleRateLimitResponse(60*time.Second, "500", "1000")
 	}
 }
+
+func BenchmarkAdaptiveRateLimiter_ConcurrentWait(b *testing.B) {
+	limiter := NewAdaptiveRateLimiter(36000000) // Very high rate to minimize blocking
+	ctx := context.Background()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = limiter.Wait(ctx)
+		}
+	})
+}
+
+func BenchmarkAdaptiveRateLimiter_ConcurrentAllow(b *testing.B) {
+	limiter := NewAdaptiveRateLimiter(36000000) // Very high rate
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = limiter.Allow()
+		}
+	})
+}
