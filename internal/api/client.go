@@ -200,20 +200,32 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 	return result, err
 }
 
-// doRequestWithRetry wraps doRequest with retry logic
+// doRequestWithRetry wraps doRequest with circuit breaker and retry logic
 // Now accepts []byte instead of io.Reader so body can be reused on retries
 func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		return c.doRequest(ctx, method, endpoint, body)
+	var respBody []byte
+
+	// Use circuit breaker to wrap the entire retry operation
+	err := c.circuitBreaker.Execute(func() error {
+		result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
+			return c.doRequest(ctx, method, endpoint, body)
+		})
+		if err != nil {
+			return err
+		}
+
+		// Safe type assertion with check
+		var ok bool
+		respBody, ok = result.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected response type")
+		}
+
+		return nil
 	})
+
 	if err != nil {
 		return nil, err
-	}
-
-	// Safe type assertion with check
-	respBody, ok := result.([]byte)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type")
 	}
 
 	return respBody, nil
