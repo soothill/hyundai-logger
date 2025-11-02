@@ -83,59 +83,6 @@ func TestByteSlicePool(t *testing.T) {
 	slice2[0] = 0
 }
 
-func TestResponsePool(t *testing.T) {
-	pool := NewResponsePool()
-
-	// Get response
-	resp := pool.Get()
-	if resp == nil {
-		t.Fatal("expected response, got nil")
-	}
-
-	// Set fields
-	resp.StatusCode = 200
-	resp.Headers = map[string]string{"Content-Type": "application/json"}
-	resp.Body = []byte("test body")
-	resp.Timestamp = 12345
-
-	// Return to pool
-	pool.Put(resp)
-
-	// Get again - should be reset
-	resp2 := pool.Get()
-	if resp2.StatusCode != 0 {
-		t.Errorf("status code should be reset, got %d", resp2.StatusCode)
-	}
-	if resp2.Headers != nil {
-		t.Error("headers should be nil")
-	}
-	if resp2.Body != nil {
-		t.Error("body should be nil")
-	}
-	if resp2.Timestamp != 0 {
-		t.Errorf("timestamp should be reset, got %d", resp2.Timestamp)
-	}
-}
-
-func TestResponsePoolLargeBody(t *testing.T) {
-	pool := NewResponsePool()
-
-	resp := pool.Get()
-
-	// Set large body (> 64KB)
-	resp.Body = make([]byte, 100*1024)
-
-	pool.Put(resp)
-
-	// Get new response
-	resp2 := pool.Get()
-
-	// Body should be cleared for large responses
-	if resp2.Body != nil && len(resp2.Body) > 64*1024 {
-		t.Error("large body should be cleared")
-	}
-}
-
 func TestJSONBufferPool(t *testing.T) {
 	pool := NewJSONBufferPool()
 
@@ -403,18 +350,6 @@ func BenchmarkGCPressure(b *testing.B) {
 		runtime.ReadMemStats(&ms2)
 		b.ReportMetric(float64(ms2.NumGC-ms1.NumGC), "GC_runs")
 	})
-}
-
-func BenchmarkResponsePool(b *testing.B) {
-	pool := NewResponsePool()
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		resp := pool.Get()
-		resp.StatusCode = 200
-		resp.Body = []byte("test response")
-		pool.Put(resp)
-	}
 }
 
 func BenchmarkJSONBufferPool(b *testing.B) {

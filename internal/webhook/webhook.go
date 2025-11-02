@@ -23,6 +23,23 @@ const (
 	AlertLevelWarning  AlertLevel = "warning"
 	AlertLevelError    AlertLevel = "error"
 	AlertLevelCritical AlertLevel = "critical"
+
+	// Default webhook timeout
+	defaultWebhookTimeout = 10 * time.Second
+
+	// Alert level colors (hex format for Slack, used for both Slack and Discord)
+	colorGreen    = "#36a64f" // Info
+	colorOrange   = "#ff9900" // Warning
+	colorRed      = "#ff0000" // Error
+	colorDarkRed  = "#8b0000" // Critical
+	colorGray     = "#808080" // Default/Unknown
+
+	// Discord color codes (decimal equivalents)
+	discordColorGreen   = 3581519  // #36a64f
+	discordColorOrange  = 16750080 // #ff9900
+	discordColorRed     = 16711680 // #ff0000
+	discordColorDarkRed = 9109504  // #8b0000
+	discordColorGray    = 8421504  // #808080
 )
 
 // Alert represents a notification to be sent
@@ -79,7 +96,7 @@ type Notifier struct {
 // New creates a new webhook notifier
 func New(config Config) *Notifier {
 	if config.Timeout == 0 {
-		config.Timeout = 10 * time.Second
+		config.Timeout = defaultWebhookTimeout
 	}
 
 	return &Notifier{
@@ -236,34 +253,20 @@ func (n *Notifier) sendDiscord(ctx context.Context, alert Alert) error {
 	return n.sendJSON(ctx, n.config.Discord.WebhookURL, payload)
 }
 
-// sendGeneric sends a notification to a generic webhook
-func (n *Notifier) sendGeneric(ctx context.Context, alert Alert, config GenericConfig) error {
-	payload := map[string]interface{}{
-		"level":       string(alert.Level),
-		"title":       alert.Title,
-		"message":     alert.Message,
-		"timestamp":   alert.Timestamp.Format(time.RFC3339),
-		"vehicle_vin": alert.VehicleVIN,
-		"metadata":    alert.Metadata,
-	}
-
-	method := config.Method
-	if method == "" {
-		method = "POST"
-	}
-
+// sendHTTPJSON sends a JSON payload via HTTP with custom method and headers
+func (n *Notifier) sendHTTPJSON(ctx context.Context, method, url string, payload interface{}, headers map[string]string) error {
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshaling payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, config.URL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("creating request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	for key, value := range config.Headers {
+	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 
@@ -281,47 +284,43 @@ func (n *Notifier) sendGeneric(ctx context.Context, alert Alert, config GenericC
 	return nil
 }
 
+// sendGeneric sends a notification to a generic webhook
+func (n *Notifier) sendGeneric(ctx context.Context, alert Alert, config GenericConfig) error {
+	payload := map[string]interface{}{
+		"level":       string(alert.Level),
+		"title":       alert.Title,
+		"message":     alert.Message,
+		"timestamp":   alert.Timestamp.Format(time.RFC3339),
+		"vehicle_vin": alert.VehicleVIN,
+		"metadata":    alert.Metadata,
+	}
+
+	method := config.Method
+	if method == "" {
+		method = "POST"
+	}
+
+	return n.sendHTTPJSON(ctx, method, config.URL, payload, config.Headers)
+}
+
 // sendJSON sends a JSON payload to a webhook URL
 func (n *Notifier) sendJSON(ctx context.Context, url string, payload interface{}) error {
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshaling payload: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("creating request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("sending request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
+	return n.sendHTTPJSON(ctx, "POST", url, payload, nil)
 }
 
 // getSlackColor returns a Slack color for the alert level
 func (n *Notifier) getSlackColor(level AlertLevel) string {
 	switch level {
 	case AlertLevelInfo:
-		return "#36a64f" // green
+		return colorGreen
 	case AlertLevelWarning:
-		return "#ff9900" // orange
+		return colorOrange
 	case AlertLevelError:
-		return "#ff0000" // red
+		return colorRed
 	case AlertLevelCritical:
-		return "#8b0000" // dark red
+		return colorDarkRed
 	default:
-		return "#808080" // gray
+		return colorGray
 	}
 }
 
@@ -329,15 +328,15 @@ func (n *Notifier) getSlackColor(level AlertLevel) string {
 func (n *Notifier) getDiscordColor(level AlertLevel) int {
 	switch level {
 	case AlertLevelInfo:
-		return 3581519 // green (#36a64f)
+		return discordColorGreen
 	case AlertLevelWarning:
-		return 16750080 // orange (#ff9900)
+		return discordColorOrange
 	case AlertLevelError:
-		return 16711680 // red (#ff0000)
+		return discordColorRed
 	case AlertLevelCritical:
-		return 9109504 // dark red (#8b0000)
+		return discordColorDarkRed
 	default:
-		return 8421504 // gray (#808080)
+		return discordColorGray
 	}
 }
 

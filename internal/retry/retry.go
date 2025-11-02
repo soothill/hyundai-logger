@@ -34,44 +34,19 @@ func New(config Config) *Retrier {
 
 // Do executes a function with retry logic and exponential backoff
 func (r *Retrier) Do(ctx context.Context, operation func() error) error {
-	var lastErr error
-
-	for attempt := 1; attempt <= r.config.MaxAttempts; attempt++ {
-		// Try the operation
-		err := operation()
-		if err == nil {
-			return nil // Success
-		}
-
-		lastErr = err
-
-		// Check if we should retry
-		if attempt >= r.config.MaxAttempts {
-			break
-		}
-
-		// Check if context is canceled
-		if ctx.Err() != nil {
-			return fmt.Errorf("context canceled after %d attempts: %w", attempt, ctx.Err())
-		}
-
-		// Calculate backoff delay
-		delay := r.calculateDelay(attempt)
-
-		// Wait before retrying
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context canceled after %d attempts: %w", attempt, ctx.Err())
-		case <-time.After(delay):
-			// Continue to next attempt
-		}
-	}
-
-	return fmt.Errorf("operation failed after %d attempts: %w", r.config.MaxAttempts, lastErr)
+	_, err := r.doRetry(ctx, func() (interface{}, error) {
+		return nil, operation()
+	})
+	return err
 }
 
 // DoWithResult executes a function with retry logic and returns a result
 func (r *Retrier) DoWithResult(ctx context.Context, operation func() (interface{}, error)) (interface{}, error) {
+	return r.doRetry(ctx, operation)
+}
+
+// doRetry is the core retry logic used by both Do and DoWithResult
+func (r *Retrier) doRetry(ctx context.Context, operation func() (interface{}, error)) (interface{}, error) {
 	var lastErr error
 	var result interface{}
 

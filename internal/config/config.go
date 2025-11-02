@@ -140,6 +140,22 @@ type GenericWebhookConfig struct {
 	Headers map[string]string `yaml:"headers"`
 }
 
+// setEnvString sets a string value from an environment variable if present
+func setEnvString(envKey string, target *string) {
+	if val := os.Getenv(envKey); val != "" {
+		*target = val
+	}
+}
+
+// setEnvInt sets an integer value from an environment variable if present
+func setEnvInt(envKey string, target *int) {
+	if val := os.Getenv(envKey); val != "" {
+		if intVal, err := strconv.Atoi(val); err == nil {
+			*target = intVal
+		}
+	}
+}
+
 // Load reads configuration from YAML file and environment variables
 // Environment variables take precedence over YAML config
 func Load(configPath string) (*Config, error) {
@@ -158,45 +174,19 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	// Override with environment variables if present
-	if val := os.Getenv("HYUNDAI_USERNAME"); val != "" {
-		cfg.Hyundai.Username = val
-	}
-	if val := os.Getenv("HYUNDAI_PASSWORD"); val != "" {
-		cfg.Hyundai.Password = val
-	}
-	if val := os.Getenv("HYUNDAI_PIN"); val != "" {
-		cfg.Hyundai.PIN = val
-	}
-	if val := os.Getenv("HYUNDAI_BRAND"); val != "" {
-		cfg.Hyundai.Brand = val
-	}
-	if val := os.Getenv("HYUNDAI_REGION"); val != "" {
-		cfg.Hyundai.Region = val
-	}
+	setEnvString("HYUNDAI_USERNAME", &cfg.Hyundai.Username)
+	setEnvString("HYUNDAI_PASSWORD", &cfg.Hyundai.Password)
+	setEnvString("HYUNDAI_PIN", &cfg.Hyundai.PIN)
+	setEnvString("HYUNDAI_BRAND", &cfg.Hyundai.Brand)
+	setEnvString("HYUNDAI_REGION", &cfg.Hyundai.Region)
 
-	if val := os.Getenv("INFLUXDB_URL"); val != "" {
-		cfg.Database.URL = val
-	}
-	if val := os.Getenv("INFLUXDB_TOKEN"); val != "" {
-		cfg.Database.Token = val
-	}
-	if val := os.Getenv("INFLUXDB_ORG"); val != "" {
-		cfg.Database.Organization = val
-	}
-	if val := os.Getenv("INFLUXDB_BUCKET"); val != "" {
-		cfg.Database.Bucket = val
-	}
+	setEnvString("INFLUXDB_URL", &cfg.Database.URL)
+	setEnvString("INFLUXDB_TOKEN", &cfg.Database.Token)
+	setEnvString("INFLUXDB_ORG", &cfg.Database.Organization)
+	setEnvString("INFLUXDB_BUCKET", &cfg.Database.Bucket)
 
-	if val := os.Getenv("POLL_INTERVAL_MINUTES"); val != "" {
-		if interval, err := strconv.Atoi(val); err == nil {
-			cfg.RateLimit.PollIntervalMinutes = interval
-		}
-	}
-	if val := os.Getenv("REQUESTS_PER_HOUR"); val != "" {
-		if req, err := strconv.Atoi(val); err == nil {
-			cfg.RateLimit.RequestsPerHour = req
-		}
-	}
+	setEnvInt("POLL_INTERVAL_MINUTES", &cfg.RateLimit.PollIntervalMinutes)
+	setEnvInt("REQUESTS_PER_HOUR", &cfg.RateLimit.RequestsPerHour)
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {

@@ -15,11 +15,15 @@ import (
 type ChargingPhase string
 
 const (
-	PhaseNotCharging ChargingPhase = "not_charging"
-	PhaseFastCharge  ChargingPhase = "fast_charge"    // >50 kW
-	PhaseNormalCharge ChargingPhase = "normal_charge"  // 7-50 kW
-	PhaseTrickle     ChargingPhase = "trickle"        // <7 kW or >95% battery
-	PhaseComplete    ChargingPhase = "complete"       // 100% battery
+	PhaseNotCharging  ChargingPhase = "not_charging"
+	PhaseFastCharge   ChargingPhase = "fast_charge"  // >50 kW
+	PhaseNormalCharge ChargingPhase = "normal_charge" // 7-50 kW
+	PhaseTrickle      ChargingPhase = "trickle"       // <7 kW or >95% battery
+	PhaseComplete     ChargingPhase = "complete"      // 100% battery
+
+	// Charging efficiency factor (80% - typical for EV charging)
+	// Accounts for energy loss during AC/DC conversion and battery heating
+	chargingEfficiency = 0.8
 )
 
 // OptimizerConfig holds configuration for the charging optimizer
@@ -213,10 +217,8 @@ func (o *Optimizer) EstimateTimeToFull(status *api.VehicleStatus) time.Duration 
 
 	remainingKWh := batteryCapacityKWh * (remainingPercent / 100.0)
 
-	// Time = Energy / Power
-	// Assuming 80% charging efficiency
-	efficiency := 0.8
-	hoursToFull := remainingKWh / (status.EV.ChargingPower * efficiency)
+	// Time = Energy / Power (accounting for charging efficiency)
+	hoursToFull := remainingKWh / (status.EV.ChargingPower * chargingEfficiency)
 
 	return time.Duration(hoursToFull * float64(time.Hour))
 }

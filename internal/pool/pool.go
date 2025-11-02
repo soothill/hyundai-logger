@@ -10,6 +10,19 @@ import (
 	"sync"
 )
 
+const (
+	// Buffer size thresholds for pooling
+	maxBufferPoolSize        = 64 * 1024 // 64KB - max buffer size to pool
+	maxStringBuilderPoolSize = 32 * 1024 // 32KB - max string builder size to pool
+
+	// JSON buffer size thresholds
+	smallJSONThreshold  = 1024      // 1KB - threshold for small JSON
+	mediumJSONThreshold = 64 * 1024 // 64KB - threshold for medium JSON
+
+	// Map pool settings
+	maxMapPoolSize = 100 // Max map entries to pool
+)
+
 // BufferPool is a pool of reusable byte buffers
 type BufferPool struct {
 	pool sync.Pool
@@ -35,8 +48,8 @@ func (p *BufferPool) Get() *bytes.Buffer {
 
 // Put returns a buffer to the pool
 func (p *BufferPool) Put(buf *bytes.Buffer) {
-	// Only pool buffers under 64KB to avoid holding large buffers
-	if buf.Cap() < 64*1024 {
+	// Only pool buffers under max size to avoid holding large buffers
+	if buf.Cap() < maxBufferPoolSize {
 		p.pool.Put(buf)
 	}
 }
@@ -74,50 +87,6 @@ func (p *ByteSlicePool) Put(slice []byte) {
 	}
 }
 
-// ResponsePool is a pool for API response structures
-type ResponsePool struct {
-	pool sync.Pool
-}
-
-// NewResponsePool creates a new response pool
-func NewResponsePool() *ResponsePool {
-	return &ResponsePool{
-		pool: sync.Pool{
-			New: func() interface{} {
-				return &Response{}
-			},
-		},
-	}
-}
-
-// Response is a pooled response structure
-type Response struct {
-	StatusCode int
-	Headers    map[string]string
-	Body       []byte
-	Timestamp  int64
-}
-
-// Get retrieves a response from the pool
-func (p *ResponsePool) Get() *Response {
-	resp := p.pool.Get().(*Response)
-	// Reset fields
-	resp.StatusCode = 0
-	resp.Headers = nil
-	resp.Body = nil
-	resp.Timestamp = 0
-	return resp
-}
-
-// Put returns a response to the pool
-func (p *ResponsePool) Put(resp *Response) {
-	// Clear large body to avoid holding memory
-	if len(resp.Body) > 64*1024 {
-		resp.Body = nil
-	}
-	p.pool.Put(resp)
-}
-
 // JSONBufferPool is specialized for JSON encoding/decoding
 type JSONBufferPool struct {
 	small *BufferPool  // For small JSON (< 1KB)
@@ -137,9 +106,9 @@ func NewJSONBufferPool() *JSONBufferPool {
 // Get retrieves an appropriately sized buffer
 func (p *JSONBufferPool) Get(estimatedSize int) *bytes.Buffer {
 	switch {
-	case estimatedSize < 1024:
+	case estimatedSize < smallJSONThreshold:
 		return p.small.Get()
-	case estimatedSize < 64*1024:
+	case estimatedSize < mediumJSONThreshold:
 		return p.medium.Get()
 	default:
 		return p.large.Get()
@@ -150,9 +119,9 @@ func (p *JSONBufferPool) Get(estimatedSize int) *bytes.Buffer {
 func (p *JSONBufferPool) Put(buf *bytes.Buffer) {
 	size := buf.Len()
 	switch {
-	case size < 1024:
+	case size < smallJSONThreshold:
 		p.small.Put(buf)
-	case size < 64*1024:
+	case size < mediumJSONThreshold:
 		p.medium.Put(buf)
 	default:
 		p.large.Put(buf)
@@ -188,7 +157,7 @@ func (p *MapPool) Get() map[string]interface{} {
 // Put returns a map to the pool
 func (p *MapPool) Put(m map[string]interface{}) {
 	// Only pool small maps
-	if len(m) < 100 {
+	if len(m) < maxMapPoolSize {
 		p.pool.Put(m)
 	}
 }
@@ -218,7 +187,7 @@ func (p *StringBuilderPool) Get() *bytes.Buffer {
 
 // Put returns a buffer to the pool
 func (p *StringBuilderPool) Put(buf *bytes.Buffer) {
-	if buf.Cap() < 32*1024 {
+	if buf.Cap() < maxStringBuilderPoolSize {
 		p.pool.Put(buf)
 	}
 }

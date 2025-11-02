@@ -22,8 +22,30 @@ import (
 )
 
 const (
-	// apiCallTimeout is the default timeout for individual API calls
-	apiCallTimeout = 25 * time.Second
+	// API call timeouts
+	apiCallTimeout    = 25 * time.Second // Default timeout for individual API calls
+	httpClientTimeout = 30 * time.Second // Overall HTTP client timeout
+
+	// HTTP transport settings
+	idleConnTimeout       = 90 * time.Second // Keep idle connections alive
+	tlsHandshakeTimeout   = 10 * time.Second // TLS handshake timeout
+	expectContinueTimeout = 1 * time.Second  // Expect: 100-continue timeout
+
+	// Circuit breaker settings
+	circuitBreakerTimeout     = 30 * time.Second // Wait time before trying half-open
+	circuitBreakerMaxFailures = 3                // Open circuit after N failures
+	circuitBreakerHalfOpenMax = 1                // Max requests in half-open state
+
+	// Cache settings
+	responseCacheTTL = 60 * time.Second // Cache TTL (reduces API calls by 20-40%)
+
+	// Rate limiting
+	maxRetryAfterSleep = 5 * time.Minute // Maximum sleep duration for rate limit backoff
+
+	// Connection pool settings
+	maxIdleConns        = 10 // Total idle connections
+	maxIdleConnsPerHost = 5  // Idle connections per host
+	maxConnsPerHost     = 10 // Max connections per host
 )
 
 // Client represents a Hyundai Bluelink API client
@@ -53,29 +75,29 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 
 	// Configure HTTP transport for connection pooling and reuse
 	transport := &http.Transport{
-		MaxIdleConns:          10,               // Total idle connections
-		MaxIdleConnsPerHost:   5,                // Idle connections per host
-		MaxConnsPerHost:       10,               // Max connections per host
-		IdleConnTimeout:       90 * time.Second, // Keep connections alive
-		DisableKeepAlives:     false,            // Enable keep-alive
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
+		MaxConnsPerHost:       maxConnsPerHost,
+		IdleConnTimeout:       idleConnTimeout,
+		DisableKeepAlives:     false, // Enable keep-alive
+		TLSHandshakeTimeout:   tlsHandshakeTimeout,
+		ExpectContinueTimeout: expectContinueTimeout,
 	}
 
 	// Create circuit breaker with custom config
 	cbConfig := circuitbreaker.Config{
-		MaxFailures:         3,                // Open after 3 consecutive failures
-		Timeout:             30 * time.Second, // Wait 30s before trying HalfOpen
-		HalfOpenMaxRequests: 1,                // Only 1 test request in HalfOpen
+		MaxFailures:         circuitBreakerMaxFailures,
+		Timeout:             circuitBreakerTimeout,
+		HalfOpenMaxRequests: circuitBreakerHalfOpenMax,
 	}
 	cb := circuitbreaker.New(cbConfig)
 
-	// Create cache with 60-second TTL (reduces API calls by 20-40%)
-	responseCache := cache.New(60 * time.Second)
+	// Create cache with configured TTL (reduces API calls by 20-40%)
+	responseCache := cache.New(responseCacheTTL)
 
 	return &Client{
 		httpClient: &http.Client{
-			Timeout:   30 * time.Second,
+			Timeout:   httpClientTimeout,
 			Transport: transport,
 		},
 		baseURL:        baseURL,
@@ -120,6 +142,61 @@ func getBaseURL(region, brand string) string {
 	return "https://api.telematics.hyundaiusa.com"
 }
 
+// buildRequest creates and configures an HTTP request with appropriate headers
+func (c *Client) buildRequest(ctx context.Context, method, endpoint string, body []byte) (*http.Request, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "HyundaiLogger/1.0")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if c.accessToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	}
+
+	return req, nil
+}
+
+// handleRateLimitError handles rate limit errors by adjusting the rate limiter and sleeping
+func (c *Client) handleRateLimitError(ctx context.Context, resp *http.Response, err error) error {
+	rateLimitErr, ok := err.(*RateLimitError)
+	if !ok {
+		return err
+	}
+
+	// Extract rate limit information
+	limit, remaining, reset := getRateLimitHeaders(resp)
+
+	// Inform adaptive rate limiter to adjust
+	c.rateLimiter.HandleRateLimitResponse(rateLimitErr.RetryAfter, remaining, limit)
+
+	// Log rate limit information (structured logging would be better)
+	fmt.Printf("Rate limit hit - Limit: %s, Remaining: %s, Reset: %s, Retry after: %s\n",
+		limit, remaining, reset, rateLimitErr.RetryAfter)
+	fmt.Printf("Rate limiter adjusted: %s\n", c.rateLimiter.GetStats().String())
+
+	// Sleep for the specified retry-after duration (capped for safety)
+	sleepDuration := rateLimitErr.RetryAfter
+	if sleepDuration > maxRetryAfterSleep {
+		sleepDuration = maxRetryAfterSleep
+	}
+
+	select {
+	case <-time.After(sleepDuration):
+		// Continue after sleep
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	return err
+}
+
 // doRequest performs an HTTP request with common headers and error handling
 // Does NOT include sensitive data in error messages
 // Accepts []byte body so it can be reused on retries (fixes retry bug)
@@ -133,20 +210,9 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 			return fmt.Errorf("rate limiter: %w", err)
 		}
 
-		var bodyReader io.Reader
-		if body != nil {
-			bodyReader = bytes.NewReader(body)
-		}
-
-		req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
+		req, err := c.buildRequest(ctx, method, endpoint, body)
 		if err != nil {
-			return fmt.Errorf("creating request: %w", err)
-		}
-
-		req.Header.Set("User-Agent", "HyundaiLogger/1.0")
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if c.accessToken != "" {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+			return err
 		}
 
 		resp, err := c.httpClient.Do(req)
@@ -157,33 +223,7 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 
 		// Check for rate limiting before reading body
 		if err := checkRateLimit(resp); err != nil {
-			// For rate limit errors, respect the Retry-After delay
-			if rateLimitErr, ok := err.(*RateLimitError); ok {
-				// Extract rate limit information
-				limit, remaining, reset := getRateLimitHeaders(resp)
-
-				// Inform adaptive rate limiter to adjust
-				c.rateLimiter.HandleRateLimitResponse(rateLimitErr.RetryAfter, remaining, limit)
-
-				// Log rate limit information (structured logging would be better)
-				fmt.Printf("Rate limit hit - Limit: %s, Remaining: %s, Reset: %s, Retry after: %s\n",
-					limit, remaining, reset, rateLimitErr.RetryAfter)
-				fmt.Printf("Rate limiter adjusted: %s\n", c.rateLimiter.GetStats().String())
-
-				// Sleep for the specified retry-after duration (capped at 5 minutes for safety)
-				sleepDuration := rateLimitErr.RetryAfter
-				if sleepDuration > 5*time.Minute {
-					sleepDuration = 5 * time.Minute
-				}
-
-				select {
-				case <-time.After(sleepDuration):
-					// Continue after sleep
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
-			return err
+			return c.handleRateLimitError(ctx, resp, err)
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
@@ -232,6 +272,29 @@ func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string
 	}
 
 	return respBody, nil
+}
+
+// getCachedOrFetch attempts to get a value from cache, or fetches it using the provided function
+func (c *Client) getCachedOrFetch(cacheKey string, fetchFn func() (interface{}, error)) (interface{}, error) {
+	// Check cache first if enabled
+	if c.cacheEnabled {
+		if cached := c.cache.Get(cacheKey); cached != nil {
+			return cached, nil
+		}
+	}
+
+	// Fetch from API
+	result, err := fetchFn()
+	if err != nil {
+		return nil, err
+	}
+
+	// Store in cache before returning
+	if c.cacheEnabled {
+		c.cache.Set(cacheKey, result)
+	}
+
+	return result, nil
 }
 
 // Authenticate performs authentication with the Hyundai API with retry logic
@@ -284,72 +347,62 @@ func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
 
 // GetVehicleStatus retrieves the current status of a vehicle with retry logic
 func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*VehicleStatus, error) {
-	// Check cache first if enabled
 	cacheKey := fmt.Sprintf("status:%s", vehicleID)
-	if c.cacheEnabled {
-		if cached := c.cache.Get(cacheKey); cached != nil {
-			if status, ok := cached.(*VehicleStatus); ok {
-				return status, nil
-			}
+
+	result, err := c.getCachedOrFetch(cacheKey, func() (interface{}, error) {
+		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+		defer cancel()
+
+		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
+
+		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("getting vehicle status: %w", err)
 		}
-	}
 
-	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-	defer cancel()
+		var status VehicleStatus
+		if err := json.Unmarshal(respBody, &status); err != nil {
+			return nil, fmt.Errorf("parsing vehicle status response: %w", err)
+		}
 
-	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
+		return &status, nil
+	})
 
-	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting vehicle status: %w", err)
+		return nil, err
 	}
 
-	var status VehicleStatus
-	if err := json.Unmarshal(respBody, &status); err != nil {
-		return nil, fmt.Errorf("parsing vehicle status response: %w", err)
-	}
-
-	// Store in cache before returning
-	if c.cacheEnabled {
-		c.cache.Set(cacheKey, &status)
-	}
-
-	return &status, nil
+	return result.(*VehicleStatus), nil
 }
 
 // GetVehicleLocation retrieves the current location of a vehicle with retry logic
 func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Location, error) {
-	// Check cache first if enabled
 	cacheKey := fmt.Sprintf("location:%s", vehicleID)
-	if c.cacheEnabled {
-		if cached := c.cache.Get(cacheKey); cached != nil {
-			if location, ok := cached.(*Location); ok {
-				return location, nil
-			}
+
+	result, err := c.getCachedOrFetch(cacheKey, func() (interface{}, error) {
+		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
+		defer cancel()
+
+		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
+
+		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("getting vehicle location: %w", err)
 		}
-	}
 
-	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-	defer cancel()
+		var location Location
+		if err := json.Unmarshal(respBody, &location); err != nil {
+			return nil, fmt.Errorf("parsing vehicle location response: %w", err)
+		}
 
-	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
+		return &location, nil
+	})
 
-	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting vehicle location: %w", err)
+		return nil, err
 	}
 
-	var location Location
-	if err := json.Unmarshal(respBody, &location); err != nil {
-		return nil, fmt.Errorf("parsing vehicle location response: %w", err)
-	}
-
-	// Store in cache before returning
-	if c.cacheEnabled {
-		c.cache.Set(cacheKey, &location)
-	}
-
-	return &location, nil
+	return result.(*Location), nil
 }
 
 // GetOdometer retrieves the odometer reading with retry logic
