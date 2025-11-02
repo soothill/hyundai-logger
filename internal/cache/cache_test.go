@@ -82,7 +82,14 @@ func TestExpiration(t *testing.T) {
 		t.Errorf("Expected nil for expired key, got %v", value)
 	}
 
-	// Verify entry was deleted
+	// Verify entry is still present but expired (cleaned by background task)
+	// Manually trigger cleanup to verify deletion
+	removed := cache.CleanExpired()
+	if removed != 1 {
+		t.Errorf("Expected 1 expired entry to be removed, got %d", removed)
+	}
+
+	// Now verify entry was deleted
 	if cache.Size() != 0 {
 		t.Errorf("Expected cache size 0 after expiration cleanup, got %d", cache.Size())
 	}

@@ -19,6 +19,15 @@ import (
 	"github.com/influxdata/influxdb-client-go/v2/domain"
 )
 
+const (
+	// InfluxDB client configuration
+	influxHTTPRequestTimeout = 30              // HTTP request timeout in seconds
+	influxMaxRetries         = 3               // Maximum number of retries for failed requests
+	influxMaxRetryInterval   = 15              // Maximum retry interval in seconds
+	influxBatchSize          = 5000            // Batch size for write operations
+	influxFlushInterval      = 1000            // Flush interval in milliseconds
+)
+
 var (
 	// vehicleIDRegex validates vehicle IDs to prevent injection
 	vehicleIDRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -32,13 +41,21 @@ type DB struct {
 	bucket   string
 }
 
-// New creates a new InfluxDB connection
+// New creates a new InfluxDB connection with optimized settings
 func New(ctx context.Context, url, token, org, bucket string) (*DB, error) {
-	// Create InfluxDB client with gzip compression enabled
-	// This reduces network bandwidth by 60-80% with minimal CPU overhead
+	// Create InfluxDB client with optimized configuration
+	// - GZip compression: reduces network bandwidth by 60-80%
+	// - Connection pooling: improves throughput under concurrent load
+	// - Retry logic: handles transient failures automatically
+	// - Batching: reduces write overhead
 	client := influxdb2.NewClientWithOptions(url, token,
 		influxdb2.DefaultOptions().
-			SetUseGZip(true))
+			SetUseGZip(true).
+			SetHTTPRequestTimeout(influxHTTPRequestTimeout).
+			SetMaxRetries(influxMaxRetries).
+			SetMaxRetryInterval(influxMaxRetryInterval).
+			SetBatchSize(influxBatchSize).
+			SetFlushInterval(influxFlushInterval))
 
 	// Test the connection by checking health
 	health, err := client.Health(ctx)

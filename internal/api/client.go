@@ -46,6 +46,9 @@ const (
 	maxIdleConns        = 10 // Total idle connections
 	maxIdleConnsPerHost = 5  // Idle connections per host
 	maxConnsPerHost     = 10 // Max connections per host
+
+	// HTTP response limits
+	maxResponseBodySize = 10 * 1024 * 1024 // 10MB - prevent memory exhaustion from large responses
 )
 
 // Client represents a Hyundai Bluelink API client
@@ -187,8 +190,12 @@ func (c *Client) handleRateLimitError(ctx context.Context, resp *http.Response, 
 		sleepDuration = maxRetryAfterSleep
 	}
 
+	// Use timer to avoid leak if context is canceled
+	timer := time.NewTimer(sleepDuration)
+	defer timer.Stop()
+
 	select {
-	case <-time.After(sleepDuration):
+	case <-timer.C:
 		// Continue after sleep
 	case <-ctx.Done():
 		return ctx.Err()
@@ -226,7 +233,8 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 			return c.handleRateLimitError(ctx, resp, err)
 		}
 
-		respBody, err := io.ReadAll(resp.Body)
+		// Limit response size to prevent memory exhaustion
+		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 		if err != nil {
 			return fmt.Errorf("reading response: %w", err)
 		}
@@ -243,32 +251,21 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 	return result, err
 }
 
-// doRequestWithRetry wraps doRequest with circuit breaker and retry logic
+// doRequestWithRetry wraps doRequest with retry logic
 // Now accepts []byte instead of io.Reader so body can be reused on retries
+// Circuit breaker is already applied in doRequest(), so we don't double-wrap
 func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	var respBody []byte
-
-	// Use circuit breaker to wrap the entire retry operation
-	err := c.circuitBreaker.Execute(func() error {
-		result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-			return c.doRequest(ctx, method, endpoint, body)
-		})
-		if err != nil {
-			return err
-		}
-
-		// Safe type assertion with check
-		var ok bool
-		respBody, ok = result.([]byte)
-		if !ok {
-			return fmt.Errorf("unexpected response type")
-		}
-
-		return nil
+	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
+		return c.doRequest(ctx, method, endpoint, body)
 	})
-
 	if err != nil {
 		return nil, err
+	}
+
+	// Safe type assertion with check
+	respBody, ok := result.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("unexpected response type")
 	}
 
 	return respBody, nil

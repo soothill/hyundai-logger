@@ -24,33 +24,39 @@ func (e *Entry) IsExpired() bool {
 
 // Cache provides a simple in-memory cache with TTL support
 type Cache struct {
-	mu      sync.RWMutex
-	entries map[string]*Entry
+	mu         sync.RWMutex
+	entries    map[string]*Entry
 	defaultTTL time.Duration
+	stopCleanup chan struct{}
 }
 
 // New creates a new cache with the specified default TTL
+// Automatically starts a background cleanup task
 func New(defaultTTL time.Duration) *Cache {
-	return &Cache{
+	c := &Cache{
 		entries:    make(map[string]*Entry),
 		defaultTTL: defaultTTL,
 	}
+
+	// Auto-start cleanup task with 1/4 of TTL interval
+	cleanupInterval := defaultTTL / 4
+	if cleanupInterval < time.Second {
+		cleanupInterval = time.Second
+	}
+	c.stopCleanup = c.StartCleanupTask(cleanupInterval)
+
+	return c
 }
 
 // Get retrieves a value from the cache
 // Returns nil if the key doesn't exist or has expired
+// Expired entries are cleaned up by the background cleanup task
 func (c *Cache) Get(key string) interface{} {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	entry, exists := c.entries[key]
-	c.mu.RUnlock()
-
-	if !exists {
-		return nil
-	}
-
-	if entry.IsExpired() {
-		// Clean up expired entry
-		c.Delete(key)
+	if !exists || entry.IsExpired() {
 		return nil
 	}
 
@@ -88,6 +94,14 @@ func (c *Cache) Clear() {
 	defer c.mu.Unlock()
 
 	c.entries = make(map[string]*Entry)
+}
+
+// Close stops the background cleanup task
+// Should be called when the cache is no longer needed
+func (c *Cache) Close() {
+	if c.stopCleanup != nil {
+		close(c.stopCleanup)
+	}
 }
 
 // Size returns the number of entries in the cache

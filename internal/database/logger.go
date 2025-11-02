@@ -8,7 +8,6 @@ package database
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/soothill/hyundai-logger/internal/alerts"
@@ -227,8 +226,8 @@ func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 	close(resultChan)
 
 	// Collect all points and errors
+	// No mutex needed - channel read is sequential in this goroutine
 	var allPoints []*write.Point
-	var mu sync.Mutex
 	hasErrors := false
 	var lastErr error
 	errorCount := 0
@@ -243,9 +242,7 @@ func (l *Logger) pollAllVehicles(ctx context.Context, vehicles []api.Vehicle) {
 		} else {
 			l.metrics.RecordVehiclePoll(result.vehicle.VIN, true)
 			// Collect points for batch write
-			mu.Lock()
 			allPoints = append(allPoints, result.points...)
-			mu.Unlock()
 		}
 	}
 
