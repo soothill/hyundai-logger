@@ -29,7 +29,7 @@ func createTestAPIServer() *httptest.Server {
 			"expires_in":    3600,
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	})
 
 	// Vehicles endpoint
@@ -46,7 +46,7 @@ func createTestAPIServer() *httptest.Server {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(vehicles)
+		_ = json.NewEncoder(w).Encode(vehicles)
 	})
 
 	// Vehicle status endpoint
@@ -67,7 +67,7 @@ func createTestAPIServer() *httptest.Server {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(status)
+		_ = json.NewEncoder(w).Encode(status)
 	})
 
 	// Vehicle location endpoint
@@ -81,7 +81,7 @@ func createTestAPIServer() *httptest.Server {
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(location)
+		_ = json.NewEncoder(w).Encode(location)
 	})
 
 	return httptest.NewServer(mux)

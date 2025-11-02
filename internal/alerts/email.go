@@ -146,6 +146,7 @@ body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
 		lastSuccessStr = lastSuccess.Format("2006-01-02 15:04:05 MST")
 	}
 
+	//nolint:staticcheck // SA5009: False positive - format string is valid but staticcheck can't parse HTML content
 	return fmt.Sprintf(body,
 		errorType,
 		errorCount,

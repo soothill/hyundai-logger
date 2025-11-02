@@ -71,7 +71,7 @@ func TestSendSlack(t *testing.T) {
 		}
 
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -124,7 +124,7 @@ func TestSendDiscord(t *testing.T) {
 		}
 
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -176,7 +176,7 @@ func TestSendGeneric(t *testing.T) {
 		receivedHeaders = r.Header
 
 		body, _ := io.ReadAll(r.Body)
-		json.Unmarshal(body, &receivedPayload)
+		_ = json.Unmarshal(body, &receivedPayload)
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -282,7 +282,7 @@ func TestSendAlert_ServerError(t *testing.T) {
 	// Create test server that returns error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("Server error"))
+		_, _ = w.Write([]byte("Server error"))
 	}))
 	defer server.Close()
 

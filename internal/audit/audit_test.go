@@ -179,7 +179,9 @@ func TestLogAuthentication(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventAuthentication {
 		t.Errorf("expected event type %s, got %s", EventAuthentication, event.EventType)
@@ -196,7 +198,9 @@ func TestLogAuthentication(t *testing.T) {
 		t.Fatalf("failed to log failed authentication: %v", err)
 	}
 
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 	if event.Severity != SeverityWarning {
 		t.Errorf("failed auth should have warning severity, got %s", event.Severity)
 	}
@@ -219,7 +223,9 @@ func TestLogVehicleAccess(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventVehicleAccess {
 		t.Errorf("expected event type %s, got %s", EventVehicleAccess, event.EventType)
@@ -243,7 +249,9 @@ func TestLogDataExport(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventDataExport {
 		t.Errorf("expected event type %s, got %s", EventDataExport, event.EventType)
@@ -271,7 +279,9 @@ func TestLogConfigChange(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventConfigChange {
 		t.Errorf("expected event type %s, got %s", EventConfigChange, event.EventType)
@@ -301,7 +311,9 @@ func TestLogAPIKeyOperations(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventAPIKeyCreate {
 		t.Errorf("expected event type %s, got %s", EventAPIKeyCreate, event.EventType)
@@ -314,7 +326,9 @@ func TestLogAPIKeyOperations(t *testing.T) {
 		t.Fatalf("failed to log API key revoke: %v", err)
 	}
 
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventAPIKeyRevoke {
 		t.Errorf("expected event type %s, got %s", EventAPIKeyRevoke, event.EventType)
@@ -331,7 +345,9 @@ func TestLogAPIKeyOperations(t *testing.T) {
 		t.Fatalf("failed to log API key use: %v", err)
 	}
 
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventAPIKeyUse {
 		t.Errorf("expected event type %s, got %s", EventAPIKeyUse, event.EventType)
@@ -359,7 +375,9 @@ func TestLogSystemEvent(t *testing.T) {
 	}
 
 	var event AuditEvent
-	json.Unmarshal(buf.Bytes(), &event)
+	if err := json.Unmarshal(buf.Bytes(), &event); err != nil {
+		t.Fatalf("failed to unmarshal event: %v", err)
+	}
 
 	if event.EventType != EventSystemStart {
 		t.Errorf("expected event type %s, got %s", EventSystemStart, event.EventType)
@@ -463,7 +481,7 @@ func TestConcurrentLogging(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			for j := 0; j < 10; j++ {
-				logger.LogAuthentication("user@example.com", "success", map[string]interface{}{
+				_ = logger.LogAuthentication("user@example.com", "success", map[string]interface{}{
 					"goroutine": id,
 					"iteration": j,
 				})
@@ -503,7 +521,7 @@ func BenchmarkLogEvent(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		logger.Log(event)
+		_ = logger.Log(event)
 	}
 }
 

@@ -179,7 +179,7 @@ func TestInFlight(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 5; i++ {
 		go func() {
-			coalescer.Do(context.Background(), "inflight-key")
+			_, _ = coalescer.Do(context.Background(), "inflight-key")
 			done <- true
 		}()
 	}
@@ -213,7 +213,9 @@ func TestClear(t *testing.T) {
 	coalescer := New(Config{RequestFn: requestFn})
 
 	// Start request
-	go coalescer.Do(context.Background(), "clear-key")
+	go func() {
+		_, _ = coalescer.Do(context.Background(), "clear-key")
+	}()
 
 	// Wait for it to start
 	time.Sleep(10 * time.Millisecond)
@@ -282,9 +284,9 @@ func TestVehicleCoalescerStats(t *testing.T) {
 	vc := NewVehicleCoalescer(requestFn, 1*time.Second)
 
 	// Make requests
-	vc.Get(context.Background(), "VIN1")
-	vc.Get(context.Background(), "VIN2")
-	vc.Get(context.Background(), "VIN1") // Different request (not concurrent)
+	_, _ = vc.Get(context.Background(), "VIN1")
+	_, _ = vc.Get(context.Background(), "VIN2")
+	_, _ = vc.Get(context.Background(), "VIN1") // Different request (not concurrent)
 
 	stats := vc.GetStats()
 
@@ -404,7 +406,7 @@ func BenchmarkCoalescing(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			coalescer.Do(context.Background(), "benchmark-key")
+			_, _ = coalescer.Do(context.Background(), "benchmark-key")
 		}
 	})
 }
@@ -418,7 +420,7 @@ func BenchmarkWithoutCoalescing(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			requestFn(context.Background(), "benchmark-key")
+			_, _ = requestFn(context.Background(), "benchmark-key")
 		}
 	})
 }
