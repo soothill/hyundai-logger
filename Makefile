@@ -93,12 +93,57 @@ init-db:
 	@echo "Initializing database..."
 	go run $(CMD_DIR)/main.go -init-db
 
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	rm -f $(BUILD_DIR)/$(BINARY_NAME)
-	rm -f *.log
-	@echo "Clean complete"
+# Clean all build artifacts, images, and caches to free up disk space
+clean clean-all:
+	@echo "Cleaning build artifacts, Docker/Podman images, and caches..."
+	@echo ""
+	@echo "This will remove:"
+	@echo "  - Build binaries and log files"
+	@echo "  - Hyundai-logger container images (all architectures)"
+	@echo "  - Go build and module cache"
+	@echo "  - Podman/Docker dangling images"
+	@echo "  - Unused container images, networks, and build cache"
+	@echo ""
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ] || exit 1
+	@echo ""
+	@echo "Removing build artifacts..."
+	@rm -f $(BUILD_DIR)/$(BINARY_NAME)
+	@rm -f *.log
+	@echo "✓ Build artifacts removed"
+	@echo ""
+	@echo "Removing hyundai-logger images..."
+	@podman manifest rm hyundai-logger:latest 2>/dev/null || true
+	@podman rmi localhost/hyundai-logger:latest 2>/dev/null || true
+	@podman rmi hyundai-logger:latest 2>/dev/null || true
+	@podman rmi hyundai-logger:amd64 2>/dev/null || true
+	@podman rmi hyundai-logger:arm64 2>/dev/null || true
+	@podman rmi hyundai-logger:armv7 2>/dev/null || true
+	@docker rmi hyundai-logger:latest 2>/dev/null || true
+	@docker rmi hyundai-logger:amd64 2>/dev/null || true
+	@docker rmi hyundai-logger:arm64 2>/dev/null || true
+	@docker rmi hyundai-logger:armv7 2>/dev/null || true
+	@echo "✓ Removed hyundai-logger images"
+	@echo ""
+	@echo "Cleaning Go caches..."
+	@go clean -cache -modcache -testcache 2>/dev/null || echo "Go cache cleanup failed or already clean"
+	@echo "✓ Go caches cleaned"
+	@echo ""
+	@echo "Cleaning Podman images and cache..."
+	@podman image prune -f 2>/dev/null || echo "Podman image prune failed or not available"
+	@podman system prune -f 2>/dev/null || echo "Podman system prune failed or not available"
+	@echo "✓ Podman cleanup complete"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
+		echo "Cleaning Docker images and cache..."; \
+		docker image prune -f 2>/dev/null || echo "Docker image prune failed"; \
+		docker system prune -f 2>/dev/null || echo "Docker system prune failed"; \
+		echo "✓ Docker cleanup complete"; \
+	fi
+	@echo ""
+	@echo "Disk space freed:"
+	@df -h / | grep -E 'Filesystem|/$$'
+	@echo ""
+	@echo "✓ Cleanup complete!"
 
 # Run tests
 test:
@@ -130,6 +175,7 @@ build-all:
 	GOMAXPROCS=$(NPROC) GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 $(CMD_DIR)/main.go
 	GOMAXPROCS=$(NPROC) GOOS=darwin GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 $(CMD_DIR)/main.go
 	GOMAXPROCS=$(NPROC) GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe $(CMD_DIR)/main.go
+	GOMAXPROCS=$(NPROC) GOOS=windows GOARCH=arm64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-arm64.exe $(CMD_DIR)/main.go
 	@echo "Multi-platform build complete"
 
 # Help
@@ -146,7 +192,7 @@ help:
 	@echo "  build         - Build the application"
 	@echo "  run           - Run the application"
 	@echo "  init-db       - Initialize the database schema"
-	@echo "  clean         - Remove build artifacts"
+	@echo "  clean         - Deep clean: remove all images, caches, and build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  install       - Install dependencies"
 	@echo "  fmt           - Format code"
@@ -209,18 +255,60 @@ docker-build:
 	$(call check_container_runtime)
 	@echo "Building container image for current platform..."
 	@echo "Using $(NPROC) CPU cores for parallel build"
-	@if command -v docker >/dev/null 2>&1; then \
+	@if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
 		DOCKER_BUILDKIT=1 docker build \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--build-arg BUILDKIT_INLINE_CACHE=1 \
 			-t hyundai-logger:latest \
 			.; \
 	elif command -v podman >/dev/null 2>&1; then \
+		echo ""; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo "ℹ️  Docker Permission Issue - Using Podman Instead"; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo ""; \
+		echo "Docker is installed but you don't have permission to use it."; \
+		echo "Building with Podman instead (functionally identical)."; \
+		echo ""; \
+		echo "To fix Docker permissions for future builds:"; \
+		echo ""; \
+		echo "  1. Add yourself to the docker group:"; \
+		echo "     sudo usermod -aG docker $$USER"; \
+		echo ""; \
+		echo "  2. Log out and back in (or run):"; \
+		echo "     newgrp docker"; \
+		echo ""; \
+		echo "  3. Verify access:"; \
+		echo "     docker ps"; \
+		echo ""; \
+		echo "For now, continuing with Podman..."; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo ""; \
+		ARCH=$$(uname -m); \
+		case $$ARCH in \
+			x86_64) PLATFORM="linux/amd64" ;; \
+			aarch64) PLATFORM="linux/arm64" ;; \
+			armv7l) PLATFORM="linux/arm/v7" ;; \
+			*) PLATFORM="linux/$$ARCH" ;; \
+		esac; \
 		podman build \
 			--jobs=$(NPROC) \
 			--build-arg GOMAXPROCS=$(NPROC) \
+			--build-arg BUILDPLATFORM=$$PLATFORM \
 			-t hyundai-logger:latest \
 			.; \
+	else \
+		echo ""; \
+		echo "❌ Error: Docker found but no permissions!"; \
+		echo ""; \
+		echo "Add yourself to the docker group:"; \
+		echo "  sudo usermod -aG docker $$USER"; \
+		echo "  newgrp docker"; \
+		echo ""; \
+		echo "Or use Podman instead:"; \
+		echo "  sudo apt-get install podman"; \
+		echo ""; \
+		exit 1; \
 	fi
 	@echo "✓ Container image built successfully"
 
@@ -300,10 +388,12 @@ docker-build-multiarch:
 			echo "✓ All base images pre-pulled"; \
 			echo ""; \
 			echo "Cleaning up previous build artifacts..."; \
+			podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
+			podman rmi localhost/hyundai-logger:latest 2>/dev/null || true; \
+			podman rmi hyundai-logger:latest 2>/dev/null || true; \
 			podman rmi hyundai-logger:amd64 2>/dev/null || true; \
 			podman rmi hyundai-logger:arm64 2>/dev/null || true; \
 			podman rmi hyundai-logger:armv7 2>/dev/null || true; \
-			podman manifest rm hyundai-logger:latest 2>/dev/null || true; \
 			echo ""; \
 			echo "Building for linux/amd64..."; \
 			AMD64_ID=$$(podman build \

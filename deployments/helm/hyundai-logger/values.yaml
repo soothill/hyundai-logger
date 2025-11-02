@@ -1,0 +1,156 @@
+# Default values for hyundai-logger
+
+replicaCount: 1
+
+image:
+  repository: hyundai-logger
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Hyundai Bluelink Configuration
+config:
+  # Use existing secret for credentials (recommended for production)
+  existingSecret: ""
+
+  # Or provide credentials directly (not recommended for production)
+  username: ""
+  password: ""
+  pin: ""
+
+  # Regional configuration
+  region: "na"  # Options: na, eu, kr, cn, au, jp, in, br
+  brand: "hyundai"  # Options: hyundai, kia, genesis
+
+  # Polling configuration
+  pollInterval: 5  # minutes
+  requestsPerHour: 50
+
+  # Development mode
+  mockMode: false  # Set to true to use mock API (no real vehicle connection)
+
+# InfluxDB Configuration
+influxdb:
+  # Deploy InfluxDB as part of this release
+  enabled: true
+
+  # External InfluxDB connection (when enabled=false)
+  url: ""
+  token: ""
+  organization: "hyundai"
+  bucket: "vehicle-data"
+
+  # Use existing secret for token (recommended)
+  existingSecret: ""
+
+  # InfluxDB chart values (when enabled=true)
+  persistence:
+    enabled: true
+    size: 10Gi
+
+  adminUser:
+    organization: "hyundai"
+    bucket: "vehicle-data"
+    user: "admin"
+    retention_policy: "30d"
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Node selection
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod security context
+podSecurityContext:
+  fsGroup: 2000
+
+# Container security context
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 10
+
+# ServiceAccount
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Logging configuration
+logging:
+  level: "info"  # Options: debug, info, warn, error
+  file: "/var/log/hyundai-logger/app.log"
+
+# Persistence for logs
+persistence:
+  enabled: false
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  storageClass: ""
+
+# Webhooks configuration
+webhooks:
+  enabled: false
+  slack:
+    enabled: false
+    webhookUrl: ""
+  discord:
+    enabled: false
+    webhookUrl: ""
+
+# Charging optimizer
+charging:
+  optimizerEnabled: true
+  fastChargePower: 50  # kW
+  tricklePower: 7      # kW
+
+# Configuration hot reload
+configReload:
+  enabled: true
+  debounceSeconds: 1
+
+# Debug logging
+debug:
+  enabled: false
+  timestamps: true
+  colors: false

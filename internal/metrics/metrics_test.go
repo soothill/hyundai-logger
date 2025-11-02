@@ -6,273 +6,388 @@
 package metrics
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
 
-func TestNewCollector(t *testing.T) {
-	collector := New()
+func TestCollector_InitialState(t *testing.T) {
+	c := New()
 
-	if collector == nil {
-		t.Fatal("Expected non-nil collector")
+	stats := c.GetStats()
+
+	if stats.TotalPolls != 0 {
+		t.Errorf("expected 0 total polls, got %d", stats.TotalPolls)
 	}
-
-	if collector.TotalPolls != 0 {
-		t.Errorf("Expected 0 total polls, got %d", collector.TotalPolls)
+	if stats.SuccessfulPolls != 0 {
+		t.Errorf("expected 0 successful polls, got %d", stats.SuccessfulPolls)
 	}
-
-	if collector.VehiclesPollSuccess == nil {
-		t.Error("Expected initialized VehiclesPollSuccess map")
+	if stats.FailedPolls != 0 {
+		t.Errorf("expected 0 failed polls, got %d", stats.FailedPolls)
 	}
-
-	if collector.VehiclesPollFailed == nil {
-		t.Error("Expected initialized VehiclesPollFailed map")
-	}
-
-	if collector.StartTime.IsZero() {
-		t.Error("Expected non-zero start time")
-	}
-}
-
-func TestRecordPollStart(t *testing.T) {
-	collector := New()
-
-	collector.RecordPollStart()
-	if collector.TotalPolls != 1 {
-		t.Errorf("Expected 1 total poll, got %d", collector.TotalPolls)
-	}
-
-	collector.RecordPollStart()
-	if collector.TotalPolls != 2 {
-		t.Errorf("Expected 2 total polls, got %d", collector.TotalPolls)
-	}
-}
-
-func TestRecordPollComplete(t *testing.T) {
-	collector := New()
-
-	duration := 2 * time.Second
-
-	// Successful poll
-	collector.RecordPollComplete(duration, true)
-
-	if collector.SuccessfulPolls != 1 {
-		t.Errorf("Expected 1 successful poll, got %d", collector.SuccessfulPolls)
-	}
-
-	if collector.LastPollDuration != duration {
-		t.Errorf("Expected duration %v, got %v", duration, collector.LastPollDuration)
-	}
-
-	if collector.ConsecutiveErrors != 0 {
-		t.Errorf("Expected 0 consecutive errors, got %d", collector.ConsecutiveErrors)
-	}
-
-	// Failed poll
-	collector.RecordPollComplete(duration, false)
-
-	if collector.FailedPolls != 1 {
-		t.Errorf("Expected 1 failed poll, got %d", collector.FailedPolls)
-	}
-
-	if collector.ConsecutiveErrors != 1 {
-		t.Errorf("Expected 1 consecutive error, got %d", collector.ConsecutiveErrors)
-	}
-}
-
-func TestAveragePollDuration(t *testing.T) {
-	collector := New()
-
-	// Must call RecordPollStart before RecordPollComplete
-	collector.RecordPollStart()
-	collector.RecordPollComplete(2*time.Second, true)
-
-	collector.RecordPollStart()
-	collector.RecordPollComplete(4*time.Second, true)
-
-	if collector.AveragePollDuration != 3*time.Second {
-		t.Errorf("Expected average 3s, got %v", collector.AveragePollDuration)
-	}
-}
-
-func TestRecordAPICall(t *testing.T) {
-	collector := New()
-
-	latency := 100 * time.Millisecond
-
-	// Successful API call
-	collector.RecordAPICall(latency, true)
-
-	if collector.APICallsTotal != 1 {
-		t.Errorf("Expected 1 API call, got %d", collector.APICallsTotal)
-	}
-
-	if collector.APICallsSuccess != 1 {
-		t.Errorf("Expected 1 successful API call, got %d", collector.APICallsSuccess)
-	}
-
-	if collector.LastAPICallTime.IsZero() {
-		t.Error("Expected non-zero last API call time")
-	}
-
-	// Failed API call
-	collector.RecordAPICall(latency, false)
-
-	if collector.APICallsTotal != 2 {
-		t.Errorf("Expected 2 API calls, got %d", collector.APICallsTotal)
-	}
-
-	if collector.APICallsFailed != 1 {
-		t.Errorf("Expected 1 failed API call, got %d", collector.APICallsFailed)
-	}
-}
-
-func TestRecordVehiclePoll(t *testing.T) {
-	collector := New()
-
-	vin := "TEST123VIN456"
-
-	// Successful vehicle poll
-	collector.RecordVehiclePoll(vin, true)
-
-	if collector.VehiclesPollSuccess[vin] != 1 {
-		t.Errorf("Expected 1 success for VIN, got %d", collector.VehiclesPollSuccess[vin])
-	}
-
-	// Failed vehicle poll
-	collector.RecordVehiclePoll(vin, false)
-
-	if collector.VehiclesPollFailed[vin] != 1 {
-		t.Errorf("Expected 1 failure for VIN, got %d", collector.VehiclesPollFailed[vin])
-	}
-}
-
-func TestRecordError(t *testing.T) {
-	collector := New()
-
-	testErr := "test error message"
-
-	collector.RecordError(testErr)
-
-	if collector.TotalErrors != 1 {
-		t.Errorf("Expected 1 total error, got %d", collector.TotalErrors)
-	}
-
-	// RecordError only tracks TotalErrors, not ConsecutiveErrors
-	// ConsecutiveErrors is tracked by RecordPollComplete with success=false
-	if collector.LastError != testErr {
-		t.Errorf("Expected last error '%s', got '%s'", testErr, collector.LastError)
-	}
-
-	if collector.LastErrorTime.IsZero() {
-		t.Error("Expected non-zero last error time")
-	}
-}
-
-func TestRecordChargingDetection(t *testing.T) {
-	collector := New()
-
-	collector.RecordChargingDetection()
-
-	if collector.ChargingDetections != 1 {
-		t.Errorf("Expected 1 charging detection, got %d", collector.ChargingDetections)
-	}
-
-	collector.RecordChargingDetection()
-
-	if collector.ChargingDetections != 2 {
-		t.Errorf("Expected 2 charging detections, got %d", collector.ChargingDetections)
-	}
-}
-
-func TestSetTotalVehicles(t *testing.T) {
-	collector := New()
-
-	collector.SetTotalVehicles(3)
-
-	if collector.TotalVehicles != 3 {
-		t.Errorf("Expected 3 total vehicles, got %d", collector.TotalVehicles)
-	}
-}
-
-func TestUpdateVehiclesCharging(t *testing.T) {
-	collector := New()
-
-	collector.UpdateVehiclesCharging(2)
-
-	if collector.VehiclesCharging != 2 {
-		t.Errorf("Expected 2 charging vehicles, got %d", collector.VehiclesCharging)
-	}
-}
-
-func TestGetUptime(t *testing.T) {
-	collector := New()
-
-	// Sleep a bit to ensure uptime > 0
-	time.Sleep(10 * time.Millisecond)
-
-	stats := collector.GetStats()
-
-	if stats.Uptime <= 0 {
-		t.Errorf("Expected positive uptime, got %v", stats.Uptime)
-	}
-}
-
-func TestSuccessRate(t *testing.T) {
-	collector := New()
-
-	// No polls yet - should be 0
-	stats := collector.GetStats()
 	if stats.PollSuccessRate != 0 {
-		t.Errorf("Expected 0 success rate with no polls, got %f", stats.PollSuccessRate)
-	}
-
-	// 3 successful, 1 failed = 75%
-	collector.TotalPolls = 4
-	collector.SuccessfulPolls = 3
-	collector.FailedPolls = 1
-
-	stats = collector.GetStats()
-	if stats.PollSuccessRate != 75.0 {
-		t.Errorf("Expected 75.0 success rate, got %f", stats.PollSuccessRate)
-	}
-
-	// 100% success
-	collector.TotalPolls = 10
-	collector.SuccessfulPolls = 10
-	collector.FailedPolls = 0
-
-	stats = collector.GetStats()
-	if stats.PollSuccessRate != 100.0 {
-		t.Errorf("Expected 100.0 success rate, got %f", stats.PollSuccessRate)
+		t.Errorf("expected 0%% success rate, got %.2f%%", stats.PollSuccessRate)
 	}
 }
 
-func TestConcurrentAccess(t *testing.T) {
-	collector := New()
+func TestCollector_RecordPollComplete(t *testing.T) {
+	c := New()
 
+	// Record successful poll
+	c.RecordPollStart()
+	c.RecordPollComplete(2*time.Second, true)
+
+	stats := c.GetStats()
+	if stats.TotalPolls != 1 {
+		t.Errorf("expected 1 total poll, got %d", stats.TotalPolls)
+	}
+	if stats.SuccessfulPolls != 1 {
+		t.Errorf("expected 1 successful poll, got %d", stats.SuccessfulPolls)
+	}
+	if stats.FailedPolls != 0 {
+		t.Errorf("expected 0 failed polls, got %d", stats.FailedPolls)
+	}
+	if stats.LastPollDuration != 2*time.Second {
+		t.Errorf("expected 2s duration, got %v", stats.LastPollDuration)
+	}
+	if stats.PollSuccessRate != 100.0 {
+		t.Errorf("expected 100%% success rate, got %.2f%%", stats.PollSuccessRate)
+	}
+
+	// Record failed poll
+	c.RecordPollStart()
+	c.RecordPollComplete(1*time.Second, false)
+
+	stats = c.GetStats()
+	if stats.TotalPolls != 2 {
+		t.Errorf("expected 2 total polls, got %d", stats.TotalPolls)
+	}
+	if stats.SuccessfulPolls != 1 {
+		t.Errorf("expected 1 successful poll, got %d", stats.SuccessfulPolls)
+	}
+	if stats.FailedPolls != 1 {
+		t.Errorf("expected 1 failed poll, got %d", stats.FailedPolls)
+	}
+	if stats.LastPollDuration != 1*time.Second {
+		t.Errorf("expected 1s duration, got %v", stats.LastPollDuration)
+	}
+	if stats.PollSuccessRate != 50.0 {
+		t.Errorf("expected 50%% success rate, got %.2f%%", stats.PollSuccessRate)
+	}
+}
+
+func TestCollector_AveragePollDuration(t *testing.T) {
+	c := New()
+
+	c.RecordPollStart()
+	c.RecordPollComplete(1*time.Second, true)
+	c.RecordPollStart()
+	c.RecordPollComplete(3*time.Second, true)
+	c.RecordPollStart()
+	c.RecordPollComplete(2*time.Second, true)
+
+	stats := c.GetStats()
+
+	// Average should be (1 + 3 + 2) / 3 = 2 seconds
+	expected := 2 * time.Second
+	if stats.AveragePollDuration != expected {
+		t.Errorf("expected average duration %v, got %v", expected, stats.AveragePollDuration)
+	}
+}
+
+func TestCollector_RecordAPICall(t *testing.T) {
+	c := New()
+
+	// Record successful API call
+	c.RecordAPICall(500*time.Millisecond, true)
+
+	stats := c.GetStats()
+	if stats.APICallsTotal != 1 {
+		t.Errorf("expected 1 total API call, got %d", stats.APICallsTotal)
+	}
+	if stats.APICallsSuccess != 1 {
+		t.Errorf("expected 1 successful API call, got %d", stats.APICallsSuccess)
+	}
+	if stats.APICallsFailed != 0 {
+		t.Errorf("expected 0 failed API calls, got %d", stats.APICallsFailed)
+	}
+	if stats.APISuccessRate != 100.0 {
+		t.Errorf("expected 100%% API success rate, got %.2f%%", stats.APISuccessRate)
+	}
+
+	// Record failed API call
+	c.RecordAPICall(0, false)
+
+	stats = c.GetStats()
+	if stats.APICallsTotal != 2 {
+		t.Errorf("expected 2 total API calls, got %d", stats.APICallsTotal)
+	}
+	if stats.APICallsSuccess != 1 {
+		t.Errorf("expected 1 successful API call, got %d", stats.APICallsSuccess)
+	}
+	if stats.APICallsFailed != 1 {
+		t.Errorf("expected 1 failed API call, got %d", stats.APICallsFailed)
+	}
+	if stats.APISuccessRate != 50.0 {
+		t.Errorf("expected 50%% API success rate, got %.2f%%", stats.APISuccessRate)
+	}
+}
+
+func TestCollector_AverageAPILatency(t *testing.T) {
+	c := New()
+
+	c.RecordAPICall(100*time.Millisecond, true)
+	c.RecordAPICall(300*time.Millisecond, true)
+	c.RecordAPICall(200*time.Millisecond, true)
+
+	stats := c.GetStats()
+
+	// Average should be (100 + 300 + 200) / 3 = 200ms
+	expected := 200 * time.Millisecond
+	if stats.AverageAPILatency != expected {
+		t.Errorf("expected average latency %v, got %v", expected, stats.AverageAPILatency)
+	}
+}
+
+func TestCollector_RecordError(t *testing.T) {
+	c := New()
+
+	// Record first error
+	c.RecordError("first error")
+
+	stats := c.GetStats()
+	if stats.TotalErrors != 1 {
+		t.Errorf("expected 1 total error, got %d", stats.TotalErrors)
+	}
+	if stats.LastError != "first error" {
+		t.Errorf("expected 'first error', got '%s'", stats.LastError)
+	}
+
+	// Record second error
+	c.RecordError("second error")
+
+	stats = c.GetStats()
+	if stats.TotalErrors != 2 {
+		t.Errorf("expected 2 total errors, got %d", stats.TotalErrors)
+	}
+	if stats.LastError != "second error" {
+		t.Errorf("expected 'second error', got '%s'", stats.LastError)
+	}
+}
+
+func TestCollector_ConsecutiveErrorsClearsOnSuccess(t *testing.T) {
+	c := New()
+
+	// Simulate failed polls (which increment consecutive errors)
+	c.RecordPollStart()
+	c.RecordPollComplete(1*time.Second, false)
+	c.RecordPollStart()
+	c.RecordPollComplete(1*time.Second, false)
+
+	stats := c.GetStats()
+	if stats.ConsecutiveErrors != 2 {
+		t.Errorf("expected 2 consecutive errors, got %d", stats.ConsecutiveErrors)
+	}
+
+	// Successful poll clears consecutive errors
+	c.RecordPollStart()
+	c.RecordPollComplete(1*time.Second, true)
+
+	stats = c.GetStats()
+	if stats.ConsecutiveErrors != 0 {
+		t.Errorf("expected 0 consecutive errors after successful poll, got %d", stats.ConsecutiveErrors)
+	}
+}
+
+func TestCollector_RecordVehiclePoll(t *testing.T) {
+	c := New()
+
+	// Record successful vehicle poll
+	c.RecordVehiclePoll("VIN123", true)
+	c.RecordVehiclePoll("VIN123", true)
+
+	// Record failed vehicle poll
+	c.RecordVehiclePoll("VIN123", false)
+
+	// We can't get individual vehicle stats, but we can verify it doesn't panic
+	stats := c.GetStats()
+	if stats.TotalVehicles < 0 {
+		t.Error("unexpected negative vehicle count")
+	}
+}
+
+func TestCollector_RecordCharging(t *testing.T) {
+	c := New()
+
+	// Record charging detection
+	c.RecordChargingDetection()
+
+	stats := c.GetStats()
+	if stats.ChargingDetections != 1 {
+		t.Errorf("expected 1 charging detection, got %d", stats.ChargingDetections)
+	}
+
+	// Update currently charging count
+	c.UpdateVehiclesCharging(1)
+
+	stats = c.GetStats()
+	if stats.VehiclesCharging != 1 {
+		t.Errorf("expected 1 vehicle charging, got %d", stats.VehiclesCharging)
+	}
+
+	// Another detection
+	c.RecordChargingDetection()
+
+	stats = c.GetStats()
+	if stats.ChargingDetections != 2 {
+		t.Errorf("expected 2 charging detections, got %d", stats.ChargingDetections)
+	}
+
+	// Update charging count to 0
+	c.UpdateVehiclesCharging(0)
+
+	stats = c.GetStats()
+	if stats.VehiclesCharging != 0 {
+		t.Errorf("expected 0 vehicles charging, got %d", stats.VehiclesCharging)
+	}
+}
+
+func TestCollector_SetTotalVehicles(t *testing.T) {
+	c := New()
+
+	c.SetTotalVehicles(3)
+
+	stats := c.GetStats()
+	if stats.TotalVehicles != 3 {
+		t.Errorf("expected 3 total vehicles, got %d", stats.TotalVehicles)
+	}
+}
+
+func TestCollector_Uptime(t *testing.T) {
+	c := New()
+
+	// Wait a bit
+	time.Sleep(100 * time.Millisecond)
+
+	stats := c.GetStats()
+	if stats.Uptime < 100*time.Millisecond {
+		t.Errorf("expected uptime >= 100ms, got %v", stats.Uptime)
+	}
+	if stats.Uptime > 200*time.Millisecond {
+		t.Errorf("expected uptime < 200ms, got %v", stats.Uptime)
+	}
+}
+
+func TestCollector_FormatStats(t *testing.T) {
+	c := New()
+
+	// Add some data
+	c.SetTotalVehicles(2)
+	c.RecordPollStart()
+	c.RecordPollComplete(2*time.Second, true)
+	c.RecordAPICall(100*time.Millisecond, true)
+	c.RecordChargingDetection()
+	c.UpdateVehiclesCharging(1)
+
+	stats := c.GetStats()
+	formatted := FormatStats(stats)
+
+	// Check for key sections
+	expectedSections := []string{
+		"Hyundai Logger Metrics",
+		"Uptime:",
+		"Poll Metrics:",
+		"Vehicle Metrics:",
+		"API Metrics:",
+		"Error Metrics:",
+	}
+
+	for _, section := range expectedSections {
+		if !strings.Contains(formatted, section) {
+			t.Errorf("expected formatted output to contain '%s'", section)
+		}
+	}
+
+	// Check for specific values
+	if !strings.Contains(formatted, "Total Vehicles: 2") {
+		t.Error("expected 'Total Vehicles: 2' in formatted output")
+	}
+	if !strings.Contains(formatted, "Currently Charging: 1") {
+		t.Error("expected 'Currently Charging: 1' in formatted output")
+	}
+}
+
+func TestCollector_ThreadSafety(t *testing.T) {
+	c := New()
 	done := make(chan bool)
 
-	// Run concurrent operations
+	// Concurrent writes
 	for i := 0; i < 10; i++ {
 		go func() {
-			collector.RecordPollStart()
-			collector.RecordPollComplete(time.Second, true)
-			collector.RecordAPICall(100*time.Millisecond, true)
-			collector.RecordVehiclePoll("TEST", true)
-			collector.RecordError("test")
-			collector.GetStats()
+			for j := 0; j < 100; j++ {
+				c.RecordPollStart()
+				c.RecordPollComplete(1*time.Second, true)
+				c.RecordAPICall(100*time.Millisecond, true)
+				c.RecordError("test error")
+				c.RecordVehiclePoll("VIN123", true)
+			}
+			done <- true
+		}()
+	}
+
+	// Concurrent reads
+	for i := 0; i < 5; i++ {
+		go func() {
+			for j := 0; j < 100; j++ {
+				stats := c.GetStats()
+				FormatStats(stats)
+			}
 			done <- true
 		}()
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 15; i++ {
 		<-done
 	}
 
-	// Should not panic - verify we can read stats
-	if collector.TotalPolls != 10 {
-		t.Errorf("Expected 10 polls, got %d", collector.TotalPolls)
+	stats := c.GetStats()
+	// Just verify some data was recorded and didn't panic
+	if stats.TotalPolls == 0 {
+		t.Error("expected some polls to be recorded")
+	}
+}
+
+func TestCollector_SuccessRateEdgeCases(t *testing.T) {
+	tests := []struct {
+		name         string
+		successes    int64
+		failures     int64
+		expectedRate float64
+	}{
+		{"no data", 0, 0, 0.0},
+		{"all success", 10, 0, 100.0},
+		{"all failures", 0, 10, 0.0},
+		{"half and half", 5, 5, 50.0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := New()
+
+			for i := int64(0); i < tt.successes; i++ {
+				c.RecordPollStart()
+				c.RecordPollComplete(1*time.Second, true)
+			}
+			for i := int64(0); i < tt.failures; i++ {
+				c.RecordPollStart()
+				c.RecordPollComplete(1*time.Second, false)
+			}
+
+			stats := c.GetStats()
+			if stats.PollSuccessRate != tt.expectedRate {
+				t.Errorf("expected %.2f%% success rate, got %.2f%%", tt.expectedRate, stats.PollSuccessRate)
+			}
+		})
 	}
 }

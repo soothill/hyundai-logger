@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hyundai-logger.fullname" . }}
+  labels:
+    {{- include "hyundai-logger.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hyundai-logger.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "hyundai-logger.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "hyundai-logger.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: HYUNDAI_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.config.existingSecret | default (include "hyundai-logger.fullname" .) }}
+              key: username
+        - name: HYUNDAI_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.config.existingSecret | default (include "hyundai-logger.fullname" .) }}
+              key: password
+        - name: HYUNDAI_PIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.config.existingSecret | default (include "hyundai-logger.fullname" .) }}
+              key: pin
+        - name: INFLUXDB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.influxdb.existingSecret | default (printf "%s-influxdb" (include "hyundai-logger.fullname" .)) }}
+              key: token
+        {{- if .Values.livenessProbe }}
+        livenessProbe:
+          {{- toYaml .Values.livenessProbe | nindent 12 }}
+        {{- end }}
+        {{- if .Values.readinessProbe }}
+        readinessProbe:
+          {{- toYaml .Values.readinessProbe | nindent 12 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 12 }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/hyundai-logger
+          readOnly: true
+        {{- if .Values.persistence.enabled }}
+        - name: logs
+          mountPath: /var/log/hyundai-logger
+        {{- end }}
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "hyundai-logger.fullname" . }}
+      {{- if .Values.persistence.enabled }}
+      - name: logs
+        persistentVolumeClaim:
+          claimName: {{ include "hyundai-logger.fullname" . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
