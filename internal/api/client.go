@@ -19,7 +19,6 @@ import (
 	"github.com/soothill/hyundai-logger/internal/cache"
 	"github.com/soothill/hyundai-logger/internal/circuitbreaker"
 	"github.com/soothill/hyundai-logger/internal/retry"
-	"golang.org/x/time/rate"
 )
 
 const (
@@ -39,7 +38,7 @@ type Client struct {
 	accessToken    string
 	refreshToken   string
 	vehicleID      string
-	rateLimiter    *rate.Limiter
+	rateLimiter    *AdaptiveRateLimiter
 	retrier        *retry.Retrier
 	circuitBreaker *circuitbreaker.CircuitBreaker
 	cache          *cache.Cache
@@ -48,10 +47,8 @@ type Client struct {
 
 // NewClient creates a new Hyundai API client
 func NewClient(username, password, pin, brand, region string, requestsPerHour int, retryConfig retry.Config) *Client {
-	// Calculate rate limit: requestsPerHour requests per hour
-	// Convert to requests per second
-	rps := float64(requestsPerHour) / 3600.0
-	limiter := rate.NewLimiter(rate.Limit(rps), 1) // burst of 1
+	// Create adaptive rate limiter with dynamic adjustment capabilities
+	limiter := NewAdaptiveRateLimiter(requestsPerHour)
 
 	baseURL := getBaseURL(region, brand)
 
@@ -163,10 +160,16 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 		if err := checkRateLimit(resp); err != nil {
 			// For rate limit errors, respect the Retry-After delay
 			if rateLimitErr, ok := err.(*RateLimitError); ok {
-				// Log rate limit information
+				// Extract rate limit information
 				limit, remaining, reset := getRateLimitHeaders(resp)
+
+				// Inform adaptive rate limiter to adjust
+				c.rateLimiter.HandleRateLimitResponse(rateLimitErr.RetryAfter, remaining, limit)
+
+				// Log rate limit information (structured logging would be better)
 				fmt.Printf("Rate limit hit - Limit: %s, Remaining: %s, Reset: %s, Retry after: %s\n",
 					limit, remaining, reset, rateLimitErr.RetryAfter)
+				fmt.Printf("Rate limiter adjusted: %s\n", c.rateLimiter.GetStats().String())
 
 				// Sleep for the specified retry-after duration (capped at 5 minutes for safety)
 				sleepDuration := rateLimitErr.RetryAfter
@@ -366,4 +369,22 @@ func (c *Client) GetCircuitBreakerState() circuitbreaker.State {
 // GetCircuitBreakerStats returns circuit breaker statistics
 func (c *Client) GetCircuitBreakerStats() (state circuitbreaker.State, failures int, lastFailure time.Time) {
 	return c.circuitBreaker.GetStats()
+}
+
+// GetRateLimiterStats returns rate limiter statistics
+func (c *Client) GetRateLimiterStats() RateLimiterStats {
+	return c.rateLimiter.GetStats()
+}
+
+// RecoverRateLimiter gradually recovers the rate limiter back to base rate
+// This should be called periodically (e.g., every 5-10 minutes) to allow
+// the rate limiter to recover after being throttled
+func (c *Client) RecoverRateLimiter() {
+	c.rateLimiter.GradualRecovery()
+}
+
+// ResetRateLimiter resets the rate limiter to its base rate
+// This can be called manually to force a full recovery
+func (c *Client) ResetRateLimiter() {
+	c.rateLimiter.Reset()
 }
