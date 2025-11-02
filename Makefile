@@ -328,12 +328,15 @@ docker-build-multiarch:
 			echo "Using existing buildx builder..."; \
 			docker buildx use multiarch-builder; \
 		fi; \
+		echo ""; \
+		echo "Building multi-arch images (stored in build cache)..."; \
+		echo "Note: Use 'make docker-push' to push to registry"; \
+		echo ""; \
 		DOCKER_BUILDKIT=1 docker buildx build \
 			--platform linux/amd64,linux/arm64,linux/arm/v7 \
 			--build-arg GOMAXPROCS=$(NPROC) \
 			--build-arg BUILDKIT_INLINE_CACHE=1 \
 			--tag hyundai-logger:latest \
-			--load \
 			.; \
 	elif command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && ! docker ps >/dev/null 2>&1; then \
 		echo "⚠️  Docker buildx detected but lacks permissions"; \
