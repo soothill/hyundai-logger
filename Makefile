@@ -2,7 +2,7 @@
 # Email: darren [at] soothill [dot] com
 # Licensed under the MIT License
 
-.PHONY: build run init-db clean test install fmt lint build-all help docker-build docker-build-multiarch docker-push docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
+.PHONY: build run init-db preflight clean test install fmt lint build-all help docker-build docker-build-multiarch docker-push docker-deploy docker-stop docker-restart docker-logs docker-clean docker-status install-logrotate
 
 # Build variables
 BINARY_NAME=hyundai-logger
@@ -92,6 +92,11 @@ run:
 init-db:
 	@echo "Initializing database..."
 	go run $(CMD_DIR)/main.go -init-db
+
+# Run preflight checks (test InfluxDB and Hyundai API connectivity)
+preflight:
+	@echo "Running preflight checks..."
+	@go run cmd/preflight/main.go
 
 # Clean all build artifacts, images, and caches to free up disk space
 clean clean-all:
@@ -192,6 +197,7 @@ help:
 	@echo "  build         - Build the application"
 	@echo "  run           - Run the application"
 	@echo "  init-db       - Initialize the database schema"
+	@echo "  preflight     - Run preflight checks (test InfluxDB and API connectivity)"
 	@echo "  clean         - Deep clean: remove all images, caches, and build artifacts"
 	@echo "  test          - Run tests"
 	@echo "  install       - Install dependencies"
