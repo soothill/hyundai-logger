@@ -7,6 +7,7 @@ package circuitbreaker
 
 import (
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -366,8 +367,8 @@ func TestCircuitBreaker_StateString(t *testing.T) {
 func TestCircuitBreaker_ConcurrentExecution(t *testing.T) {
 	cb := NewWithDefaults()
 	done := make(chan bool)
-	successCount := 0
-	failCount := 0
+	var successCount int32
+	var failCount int32
 
 	// Run concurrent executions
 	for i := 0; i < 50; i++ {
@@ -379,9 +380,9 @@ func TestCircuitBreaker_ConcurrentExecution(t *testing.T) {
 				return errors.New("error")
 			})
 			if err == nil {
-				successCount++
+				atomic.AddInt32(&successCount, 1)
 			} else {
-				failCount++
+				atomic.AddInt32(&failCount, 1)
 			}
 			done <- true
 		}(i)
@@ -393,7 +394,8 @@ func TestCircuitBreaker_ConcurrentExecution(t *testing.T) {
 	}
 
 	// Just verify it didn't panic
-	if successCount+failCount == 0 {
+	totalCount := atomic.LoadInt32(&successCount) + atomic.LoadInt32(&failCount)
+	if totalCount == 0 {
 		t.Error("expected some executions to complete")
 	}
 }

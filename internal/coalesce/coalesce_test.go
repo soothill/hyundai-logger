@@ -125,7 +125,7 @@ func TestContextCancellation(t *testing.T) {
 
 	_, err := coalescer.Do(ctx, "cancel-key")
 
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }
