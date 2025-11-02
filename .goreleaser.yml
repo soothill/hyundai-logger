@@ -198,13 +198,31 @@ dockers:
       - "--label=org.opencontainers.image.created={{ .Date }}"
       - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
 
+  - image_templates:
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-armv7"
+      - "ghcr.io/soothill/hyundai-logger:latest-armv7"
+    use: buildx
+    goarch: arm
+    goarm: 7
+    build_flag_templates:
+      - "--platform=linux/arm/v7"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Vehicle telemetry data collector"
+      - "--label=org.opencontainers.image.url=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.source=https://github.com/soothill/hyundai-logger"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+
 docker_manifests:
   - name_template: "ghcr.io/soothill/hyundai-logger:{{ .Version }}"
     image_templates:
       - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-amd64"
       - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-arm64"
+      - "ghcr.io/soothill/hyundai-logger:{{ .Version }}-armv7"
 
   - name_template: "ghcr.io/soothill/hyundai-logger:latest"
     image_templates:
       - "ghcr.io/soothill/hyundai-logger:latest-amd64"
       - "ghcr.io/soothill/hyundai-logger:latest-arm64"
+      - "ghcr.io/soothill/hyundai-logger:latest-armv7"
