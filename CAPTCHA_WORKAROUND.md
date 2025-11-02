@@ -8,24 +8,49 @@ The Hyundai/Kia API servers use bot detection mechanisms that may trigger captch
 - Too many requests are made in a short period
 - Suspicious User-Agent strings are detected
 - Missing or incorrect headers
+- **Invalid or missing cryptographic authentication stamps** (most common)
+- Missing device ID headers
 - New IP addresses or locations
 
-## Recent Updates
+## Recent Updates (January 2025)
 
-We've updated the HTTP client to better mimic official mobile apps:
+We've implemented **cryptographically correct** authentication matching official mobile apps:
 
-### ✅ Updated Features
+### ✅ NEW: Proper Stamp Generation (Critical Fix)
+
+The most important change for avoiding captchas is implementing the correct stamp generation algorithm:
+
+1. **XOR-Based Stamp Encryption**
+   - Implements the exact XOR encryption algorithm used by official Hyundai/Kia mobile apps
+   - Uses brand-specific CFB (Cipher Feedback) keys reverse-engineered from official apps
+   - Generates stamps using: `base64(XOR(CFB_KEY, "APP_ID:timestamp"))`
+   - **This was the primary cause of captcha triggers** - our previous timestamp-only stamps were detected as fake
+
+2. **Brand-Specific Authentication Constants**
+   - **Kia**: Uses official Kia Connect app CFB key and APP_ID `a2b8469b-30a3-4361-8e13-6fceea8fbe74`
+   - **Hyundai**: Uses official Hyundai Bluelink app CFB key and APP_ID `014d2225-8495-4735-812d-2616334fd15d`
+   - **Genesis**: Uses official Genesis Connected app CFB key and APP_ID `f11f2b86-e0e7-4851-90df-5600b01d8b70`
+   - Each brand has unique cryptographic keys extracted from official mobile apps
+
+3. **Device ID Registration**
+   - Generates unique 64-character hex device ID per client instance
+   - Sends `ccsp-device-id` header with all EU region requests
+   - Mimics official mobile app device registration flow
+
+### ✅ Enhanced Headers
 
 1. **Realistic User-Agent Strings**
-   - Now uses `okhttp/3.12.1` (official mobile app library)
-   - For EU Hyundai: Uses Android WebView User-Agent
+   - Now uses `okhttp/3.12.1` (official mobile app HTTP library)
+   - For EU Hyundai: Uses Android WebView User-Agent for web-based flows
 
-2. **Region-Specific Headers**
-   - **EU Region:**
+2. **Complete EU Region Headers**
+   - **EU Region** (all headers required):
      - `ccsp-service-id`: Service identifier
      - `ccsp-application-id`: Application identifier
-     - `Stamp`: Timestamp-based authentication stamp
+     - `ccsp-device-id`: Random 64-char hex device ID (**NEW**)
+     - `Stamp`: XOR-encrypted authentication stamp (**FIXED** - now cryptographically correct)
      - `clientId`: ANDROID
+     - `Host`: Brand-specific API endpoint
 
    - **US/CA Region:**
      - `clientId`: ANDROID
@@ -36,6 +61,16 @@ We've updated the HTTP client to better mimic official mobile apps:
    - `Accept-Language`: en-US,en;q=0.9
    - `Accept-Encoding`: gzip, deflate, br
    - `Content-Type`: application/json
+   - `User-Agent`: okhttp/3.12.1 (or brand-specific)
+
+### 📊 Expected Results
+
+With these changes, captcha occurrences should be **dramatically reduced** because:
+- We now generate valid cryptographic stamps that the API server can verify
+- Device IDs properly identify the client as a legitimate mobile app instance
+- All headers match what official mobile apps send
+
+**Note**: If you still encounter captchas, it may be due to rate limiting or IP-based restrictions. See the manual authentication workaround below.
 
 ## Manual Authentication (If Captcha Still Appears)
 

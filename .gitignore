@@ -45,3 +45,4 @@ config.yaml
 /hyundai-logger-interactive
 /export-data
 coverage.txt
+/preflight

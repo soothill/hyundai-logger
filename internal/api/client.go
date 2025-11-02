@@ -8,6 +8,9 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -51,6 +54,30 @@ const (
 	maxResponseBodySize = 10 * 1024 * 1024 // 10MB - prevent memory exhaustion from large responses
 )
 
+// Brand-specific authentication constants for EU region
+// These are used for stamp generation to avoid bot detection
+// Source: reverse engineered from official mobile apps (hyundai_kia_connect_api)
+var (
+	// CFB (Cipher Feedback) keys for XOR encryption - base64 decoded
+	cfbKia     = mustDecodeBase64("wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMbZs=")
+	cfbHyundai = mustDecodeBase64("RFtoRq/vDXJmRndoZaZQyfOot7OrIqGVFj96iY2WL3yyH5Z/pUvlUhqmCxD2t+D65SQ=")
+	cfbGenesis = mustDecodeBase64("RFtoRq/vDXJmRndoZaZQyYo3/qFLtVReW8P7utRPcc0ZxOzOELm9mexvviBk/qqIp4A=")
+
+	// Application IDs for each brand (EU region)
+	appIDKia     = "a2b8469b-30a3-4361-8e13-6fceea8fbe74"
+	appIDHyundai = "014d2225-8495-4735-812d-2616334fd15d"
+	appIDGenesis = "f11f2b86-e0e7-4851-90df-5600b01d8b70"
+)
+
+// mustDecodeBase64 decodes base64 or panics (used for constants at init time)
+func mustDecodeBase64(s string) []byte {
+	data, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		panic(fmt.Sprintf("failed to decode base64: %v", err))
+	}
+	return data
+}
+
 // Client represents a Hyundai Bluelink API client
 type Client struct {
 	httpClient     *http.Client
@@ -62,6 +89,7 @@ type Client struct {
 	region         string
 	accessToken    string
 	refreshToken   string
+	deviceID       string // Random device ID for EU region authentication
 	rateLimiter    *AdaptiveRateLimiter
 	retrier        *retry.Retrier
 	circuitBreaker *circuitbreaker.CircuitBreaker
@@ -98,6 +126,9 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 	// Create cache with configured TTL (reduces API calls by 20-40%)
 	responseCache := cache.New(responseCacheTTL)
 
+	// Generate device ID for EU region authentication (64-char hex string)
+	deviceID := generateDeviceID()
+
 	return &Client{
 		httpClient: &http.Client{
 			Timeout:   httpClientTimeout,
@@ -109,6 +140,7 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 		pin:            pin,
 		brand:          brand,
 		region:         region,
+		deviceID:       deviceID,
 		rateLimiter:    limiter,
 		retrier:        retry.New(retryConfig),
 		circuitBreaker: cb,
@@ -200,10 +232,11 @@ func (c *Client) getUserAgent() string {
 func (c *Client) setRegionSpecificHeaders(req *http.Request) {
 	switch c.region {
 	case "EU":
-		// EU-specific headers
+		// EU-specific headers - these are critical for avoiding bot detection
 		req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
 		req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
-		req.Header.Set("Stamp", generateStamp())
+		req.Header.Set("ccsp-device-id", c.deviceID)
+		req.Header.Set("Stamp", c.generateStamp())
 		req.Header.Set("clientId", "ANDROID")
 		req.Header.Set("Host", "prd.eu-ccapi.hyundai.com:8080")
 	case "US", "CA":
@@ -213,10 +246,66 @@ func (c *Client) setRegionSpecificHeaders(req *http.Request) {
 	}
 }
 
-// generateStamp generates a timestamp-based stamp for EU region
-func generateStamp() string {
-	// EU API requires a timestamp-based stamp
-	return fmt.Sprintf("%d", time.Now().Unix())
+// generateDeviceID creates a random 64-character hex device ID
+// This mimics the device registration from official mobile apps
+func generateDeviceID() string {
+	// Generate 32 random bytes (will be 64 hex characters)
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based ID if random fails
+		return fmt.Sprintf("%064x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(bytes)
+}
+
+// generateStamp generates a cryptographically valid stamp for EU region authentication
+// This implements the XOR-based stamp generation used by official Hyundai/Kia mobile apps
+// The stamp prevents bot detection by proving we have the correct CFB key
+func (c *Client) generateStamp() string {
+	// Get brand-specific CFB key and APP_ID
+	cfb := c.getCFB()
+	appID := c.getAppID()
+
+	// Create raw data: "APP_ID:timestamp"
+	timestamp := time.Now().Unix()
+	rawData := []byte(fmt.Sprintf("%s:%d", appID, timestamp))
+
+	// XOR with CFB key (cycling through CFB if rawData is longer)
+	result := make([]byte, len(rawData))
+	for i := 0; i < len(rawData); i++ {
+		result[i] = cfb[i%len(cfb)] ^ rawData[i]
+	}
+
+	// Base64 encode the result
+	return base64.StdEncoding.EncodeToString(result)
+}
+
+// getCFB returns the brand-specific CFB key for XOR encryption
+func (c *Client) getCFB() []byte {
+	switch strings.ToLower(c.brand) {
+	case "kia":
+		return cfbKia
+	case "hyundai":
+		return cfbHyundai
+	case "genesis":
+		return cfbGenesis
+	default:
+		return cfbHyundai // Default to Hyundai
+	}
+}
+
+// getAppID returns the brand-specific application ID
+func (c *Client) getAppID() string {
+	switch strings.ToLower(c.brand) {
+	case "kia":
+		return appIDKia
+	case "hyundai":
+		return appIDHyundai
+	case "genesis":
+		return appIDGenesis
+	default:
+		return appIDHyundai // Default to Hyundai
+	}
 }
 
 // handleRateLimitError handles rate limit errors by adjusting the rate limiter and sleeping
