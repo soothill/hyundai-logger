@@ -41,3 +41,4 @@ config.yaml
 /validate-config
 /hyundai-logger-interactive
 /export-data
+coverage.txt
