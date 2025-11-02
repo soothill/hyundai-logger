@@ -550,7 +550,7 @@ docker-push:
 	@echo "   - DOCKER_HUB.md provides Docker-specific docs"
 	@echo "   - Update both files before pushing"
 	@echo ""
-	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1 && docker ps >/dev/null 2>&1; then \
+	@if command -v docker >/dev/null 2>&1 && docker ps >/dev/null 2>&1 && docker images hyundai-logger:latest >/dev/null 2>&1; then \
 		echo "Using Docker to push..."; \
 		echo "Checking Docker Hub login status..."; \
 		if ! docker info 2>/dev/null | grep -q "Username:"; then \
