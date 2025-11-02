@@ -388,3 +388,14 @@ func (c *Client) RecoverRateLimiter() {
 func (c *Client) ResetRateLimiter() {
 	c.rateLimiter.Reset()
 }
+
+// SetBaseURL sets a custom base URL for the API client
+// This is primarily used for testing with mock servers
+func (c *Client) SetBaseURL(baseURL string) {
+	c.baseURL = baseURL
+}
+
+// DisableCache disables response caching for testing
+func (c *Client) DisableCache() {
+	c.cacheEnabled = false
+}
