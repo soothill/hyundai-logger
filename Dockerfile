@@ -1,6 +1,6 @@
 # Build stage - use native platform for compilation (much faster!)
 # BUILDPLATFORM is automatically set to the host platform (e.g., linux/amd64)
-FROM --platform=$BUILDPLATFORM docker.io/golang:1.24-alpine AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.21-alpine AS builder
 
 # Build arguments for parallel compilation
 ARG GOMAXPROCS=4
