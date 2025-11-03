@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -269,43 +270,50 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 	// Test 3: Check API endpoint reachability
 	fmt.Print("   ⏳ Testing Hyundai API endpoint... ")
 
-	// Determine API endpoint based on region
+	// Determine API endpoint based on region (case-insensitive)
 	var apiHost string
 	var apiHostname string
-	switch cfg.Hyundai.Region {
-	case "na":
+	region := strings.ToUpper(cfg.Hyundai.Region)
+
+	switch region {
+	case "NA", "US", "CA":
 		apiHostname = "api.telematics.hyundaiusa.com"
 		apiHost = apiHostname + ":443"
-	case "eu":
+	case "EU":
 		apiHostname = "prd.eu-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "kr":
+		apiHost = apiHostname + ":8080" // EU API uses port 8080, not 443
+	case "KR":
 		apiHostname = "prd.kr-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
-	case "cn":
+	case "CN":
 		apiHostname = "prd.cn-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
-	case "au":
+	case "AU":
 		apiHostname = "prd.au-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
-	case "jp":
+	case "JP":
 		apiHostname = "prd.jp-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
-	case "in":
+	case "IN":
 		apiHostname = "prd.in-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
-	case "br":
+	case "BR":
 		apiHostname = "prd.br-ccapi.hyundai.com"
 		apiHost = apiHostname + ":443"
 	default:
 		apiHostname = "prd.eu-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
+		apiHost = apiHostname + ":8080" // EU API uses port 8080
 	}
 
 	// For Kia, adjust endpoint
-	if cfg.Hyundai.Brand == "kia" {
-		apiHostname = "prd.eu-ccapi.kia.com"
-		apiHost = apiHostname + ":443"
+	if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
+		if region == "EU" {
+			apiHostname = "prd.eu-ccapi.kia.com"
+			apiHost = apiHostname + ":8080" // Kia EU also uses port 8080
+		} else {
+			apiHostname = "api.owners.kia.com"
+			apiHost = apiHostname + ":443"
+		}
 	}
 
 	// Test DNS resolution first
@@ -338,16 +346,16 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
 		fmt.Printf("      Hostname: %s\n", apiHostname)
 		fmt.Printf("      Resolved IPs: %v\n", ips)
-		fmt.Printf("      Port: 443 (HTTPS)\n")
+		fmt.Printf("      Full endpoint: %s\n", apiHost)
 		fmt.Printf("      Error: %v\n", err)
 		fmt.Println()
 		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
 		fmt.Printf("      1. Test direct connection:\n")
-		fmt.Printf("         curl -v --connect-timeout 10 https://%s\n", apiHostname)
-		fmt.Printf("      2. Check firewall rules:\n")
-		fmt.Printf("         sudo iptables -L -n | grep 443\n")
+		fmt.Printf("         curl -v --connect-timeout 10 https://%s\n", apiHost)
+		fmt.Printf("      2. Check firewall rules for this port:\n")
+		fmt.Printf("         sudo iptables -L -n\n")
 		fmt.Printf("      3. Test with netcat:\n")
-		fmt.Printf("         nc -zv %s 443\n", apiHostname)
+		fmt.Printf("         nc -zv %s\n", apiHost)
 		fmt.Printf("      4. Check if running in restricted network/container\n")
 		fmt.Printf("      5. Try from different network to rule out ISP blocking\n")
 		fmt.Println()
