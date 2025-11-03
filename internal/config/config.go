@@ -35,6 +35,7 @@ type HyundaiConfig struct {
 	StampURL     string `yaml:"stamp_url"`
 	AccessToken  string `yaml:"access_token"`  // Optional: pre-existing access token
 	RefreshToken string `yaml:"refresh_token"` // Optional: pre-existing refresh token
+	DeviceID     string `yaml:"device_id"`     // Optional: device ID for EU region
 }
 
 type RateLimitConfig struct {
@@ -193,6 +194,12 @@ func loadTokensFromFile(cfg *Config) {
 			if value != "" {
 				cfg.Hyundai.RefreshToken = value
 			}
+		} else if strings.HasPrefix(line, "DEVICE_ID=") {
+			value := strings.TrimPrefix(line, "DEVICE_ID=")
+			value = strings.Trim(value, "\"'") // Remove quotes
+			if value != "" {
+				cfg.Hyundai.DeviceID = value
+			}
 		}
 	}
 }
@@ -225,6 +232,7 @@ func Load(configPath string) (*Config, error) {
 	setEnvString("HYUNDAI_REGION", &cfg.Hyundai.Region)
 	setEnvString("ACCESS_TOKEN", &cfg.Hyundai.AccessToken)
 	setEnvString("REFRESH_TOKEN", &cfg.Hyundai.RefreshToken)
+	setEnvString("DEVICE_ID", &cfg.Hyundai.DeviceID)
 
 	setEnvString("INFLUXDB_URL", &cfg.Database.URL)
 	setEnvString("INFLUXDB_TOKEN", &cfg.Database.Token)

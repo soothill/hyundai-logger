@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -268,9 +269,9 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 		return nil
 	}
 
-	// Use a shorter timeout for device registration (10 seconds)
-	// to avoid blocking authentication flow
-	regCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// Use a longer timeout for device registration (30 seconds)
+	// Some users report slow responses from the device registration endpoint
+	regCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Generate random push registration ID
@@ -281,9 +282,17 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 
 	endpoint := fmt.Sprintf("%s/api/v1/spa/notifications/register", c.baseURL)
 
+	// Brand-specific pushType (discovered from hyundai_kia_connect_api):
+	// - Hyundai EU: GCM
+	// - Kia EU: APNS
+	pushType := "GCM"
+	if strings.ToLower(c.brand) == "kia" {
+		pushType = "APNS"
+	}
+
 	payload := map[string]interface{}{
 		"pushRegId": pushRegID,
-		"pushType":  "GCM",
+		"pushType":  pushType,
 		"uuid":      uuid,
 	}
 
@@ -292,28 +301,75 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 		return fmt.Errorf("marshaling device registration payload: %w", err)
 	}
 
-	respBody, err := c.doRequest(regCtx, "POST", endpoint, payloadBytes)
-	if err != nil {
-		return fmt.Errorf("registering device: %w", err)
+	fmt.Printf("Registering device with EU API (pushType=%s)...\n", pushType)
+
+	// Create a dedicated HTTP client for device registration
+	// Force HTTP/1.1 to match Python requests library behavior
+	transport := &http.Transport{
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		MaxIdleConns:          2,
+		MaxIdleConnsPerHost:   2,
+		IdleConnTimeout:       30 * time.Second,
+		ForceAttemptHTTP2:     false, // Force HTTP/1.1
 	}
 
-	var resp struct {
+	regClient := &http.Client{
+		Timeout:   20 * time.Second,
+		Transport: transport,
+	}
+
+	// Build request with minimal headers (mimicking Python okhttp)
+	req, err := http.NewRequestWithContext(regCtx, "POST", endpoint, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return fmt.Errorf("building device registration request: %w", err)
+	}
+
+	// Set headers to match Python okhttp/3.12.0 behavior
+	req.Header.Set("User-Agent", "okhttp/3.12.0")
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
+	req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
+	req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
+	req.Header.Set("Stamp", c.generateStamp())
+
+	// Execute request with dedicated client
+	resp, err := regClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("device registration request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	if err != nil {
+		return fmt.Errorf("reading device registration response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("device registration failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var regResp struct {
 		RetCode string `json:"retCode"`
 		ResMsg  struct {
 			DeviceID string `json:"deviceId"`
 		} `json:"resMsg"`
 	}
 
-	if err := json.Unmarshal(respBody, &resp); err != nil {
+	if err := json.Unmarshal(respBody, &regResp); err != nil {
 		return fmt.Errorf("parsing device registration response: %w", err)
 	}
 
-	if resp.RetCode != "S" || resp.ResMsg.DeviceID == "" {
+	if regResp.RetCode != "S" || regResp.ResMsg.DeviceID == "" {
 		return fmt.Errorf("device registration failed: %s", string(respBody))
 	}
 
 	// Store the device ID for future requests
-	c.deviceID = resp.ResMsg.DeviceID
+	c.deviceID = regResp.ResMsg.DeviceID
+	fmt.Printf("Device registered successfully: %s\n", c.deviceID[:16]+"...")
 
 	return nil
 }
@@ -338,6 +394,15 @@ func (c *Client) generateStamp() string {
 
 	// Base64 encode the result
 	return base64.StdEncoding.EncodeToString(result)
+}
+
+// generateDeviceID generates a device ID from the cryptographic stamp
+// This follows the pattern used by hyundai_kia_connect_api: device_id = _get_device_id(stamp)
+// The device ID is derived by hashing the stamp with SHA-256
+func (c *Client) generateDeviceID(stamp string) string {
+	// Hash the stamp with SHA-256 to generate a stable device ID
+	hash := sha256.Sum256([]byte(stamp))
+	return hex.EncodeToString(hash[:])
 }
 
 // getCFB returns the brand-specific CFB key for XOR encryption
@@ -659,14 +724,13 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 	}
 	// else: keep the existing c.refreshToken value
 
-	// Register device ID with the API (optional for EU region)
-	// This must be done AFTER getting the access token but BEFORE making any API calls
-	// If registration fails, we'll use a random device ID as fallback
-	if err := c.registerDeviceID(ctx); err != nil {
-		// Log warning but don't fail authentication
-		// Use a random device ID as fallback
-		c.deviceID = generateRandomHex()
-		fmt.Printf("Warning: Device registration failed, using random device ID: %v\n", err)
+	// Generate device ID for EU region if we don't have one
+	// The device ID is derived from the cryptographic stamp (similar to Python hyundai_kia_connect_api)
+	// Skip if we already have a device ID (e.g., loaded from file or manually provided)
+	if c.deviceID == "" && c.region == "EU" {
+		stamp := c.generateStamp()
+		c.deviceID = c.generateDeviceID(stamp)
+		fmt.Printf("Generated device ID from stamp: %s\n", c.deviceID[:16]+"...")
 	}
 
 	// Persist new tokens to .auth_tokens file for future use
@@ -696,12 +760,14 @@ func (c *Client) saveTokensToFile() error {
 
 ACCESS_TOKEN="%s"
 REFRESH_TOKEN="%s"
+DEVICE_ID="%s"
 `,
 		time.Now().Format(time.RFC1123),
 		c.brand,
 		c.region,
 		c.accessToken,
 		c.refreshToken,
+		c.deviceID,
 	)
 
 	// Write to file with restrictive permissions (600 = owner read/write only)
@@ -861,6 +927,26 @@ func (c *Client) GetRateLimiterStats() RateLimiterStats {
 // the rate limiter to recover after being throttled
 func (c *Client) RecoverRateLimiter() {
 	c.rateLimiter.GradualRecovery()
+}
+
+// GetAccessToken returns the current access token
+func (c *Client) GetAccessToken() string {
+	return c.accessToken
+}
+
+// GetRefreshToken returns the current refresh token
+func (c *Client) GetRefreshToken() string {
+	return c.refreshToken
+}
+
+// GetDeviceID returns the current device ID
+func (c *Client) GetDeviceID() string {
+	return c.deviceID
+}
+
+// SetDeviceID sets the device ID
+func (c *Client) SetDeviceID(deviceID string) {
+	c.deviceID = deviceID
 }
 
 // ResetRateLimiter resets the rate limiter to its base rate

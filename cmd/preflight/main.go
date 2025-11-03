@@ -391,6 +391,9 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 	usingExistingTokens := false
 	if cfg.Hyundai.AccessToken != "" && cfg.Hyundai.RefreshToken != "" {
 		testClient.SetTokens(cfg.Hyundai.AccessToken, cfg.Hyundai.RefreshToken)
+		if cfg.Hyundai.DeviceID != "" {
+			testClient.SetDeviceID(cfg.Hyundai.DeviceID)
+		}
 		usingExistingTokens = true
 	}
 
@@ -399,47 +402,83 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 	defer authCancel()
 
 	if usingExistingTokens {
-		// If we have existing tokens, test them by fetching vehicles
-		_, err = testClient.GetVehicles(authCtx)
+		// Skip initial GetVehicles test to avoid circuit breaker issues
+		// We'll test GetVehicles after ensuring authentication is fresh
+		printSuccess("Using existing tokens, verifying with authentication...")
+		fmt.Println()
+
+		// Always re-authenticate to ensure we have valid tokens and a properly registered device
+		err = testClient.Authenticate(authCtx)
 		if err != nil {
-			// Check if this is actually an auth error or something else
-			errStr := err.Error()
-			if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") || strings.Contains(errStr, "unauthorized") {
-				// Tokens are truly invalid
-				printError("", fmt.Errorf("existing tokens invalid, attempting fresh authentication"))
-				fmt.Println()
-			} else {
-				// Different error - show it for debugging
-				printError("", fmt.Errorf("GetVehicles failed: %v", err))
-				fmt.Printf("   %sNote:%s This may not be a token issue. Attempting fresh authentication anyway...\n", colorYellow, colorReset)
-				fmt.Println()
+			// Authentication failed
+			printError("", fmt.Errorf("authentication failed"))
+			fmt.Println()
+			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+			fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
+			fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
+			fmt.Printf("      Region: %s\n", region)
+			fmt.Printf("      Error: %v\n", err)
+			fmt.Println()
+			fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Incorrect credentials\n")
+			fmt.Printf("      2. Captcha challenge (API may require manual login)\n")
+			fmt.Printf("      3. Account locked or requires password reset\n")
+			fmt.Println()
+			fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Use manual authentication to get fresh tokens:\n")
+			fmt.Printf("         make manual-auth\n")
+			fmt.Printf("      2. Verify credentials in official app/website\n")
+			return false
+		}
+		printSuccess("Authentication successful")
+
+		// Verify GetVehicles works after authentication
+		fmt.Print("   ⏳ Verifying vehicle list access... ")
+
+		// Create a new client to avoid circuit breaker issues from previous failed attempts
+		// The old client's circuit breaker may be open from failed GetVehicles calls
+		freshClient := api.NewClient(
+			cfg.Hyundai.Username,
+			cfg.Hyundai.Password,
+			cfg.Hyundai.PIN,
+			cfg.Hyundai.Brand,
+			cfg.Hyundai.Region,
+			cfg.RateLimit.RequestsPerHour,
+			retryConfig,
+		)
+		// Copy the fresh tokens and device ID to the new client
+		freshClient.SetTokens(testClient.GetAccessToken(), testClient.GetRefreshToken())
+		freshClient.SetDeviceID(testClient.GetDeviceID())
+
+		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer verifyCancel()
+
+		vehicles, err := freshClient.GetVehicles(verifyCtx)
+		if err != nil {
+			printError("", fmt.Errorf("failed to get vehicles after authentication"))
+			fmt.Println()
+			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+			fmt.Printf("      Error: %v\n", err)
+			fmt.Printf("      Note: Authentication succeeded but GetVehicles failed\n")
+			fmt.Println()
+			fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Check if circuit breaker is blocking (may need longer delay)\n")
+			fmt.Printf("      2. Verify account has vehicles registered\n")
+			fmt.Printf("      3. Check API endpoint for region %s\n", region)
+			return false
+		}
+
+		printSuccess(fmt.Sprintf("Vehicle list retrieved (%d vehicle(s))", len(vehicles)))
+		if len(vehicles) > 0 {
+			fmt.Println()
+			fmt.Printf("   %sVehicles:%s\n", colorBlue, colorReset)
+			for i, vehicle := range vehicles {
+				name := vehicle.Nickname
+				if name == "" {
+					name = fmt.Sprintf("%d %s %s", vehicle.Year, vehicle.Make, vehicle.Model)
+				}
+				fmt.Printf("      %d. %s (VIN: %s)\n", i+1, name, maskString(vehicle.VIN))
 			}
-			err = testClient.Authenticate(authCtx)
-			if err != nil {
-				// Failed both with tokens and credentials
-				printError("", fmt.Errorf("authentication failed"))
-				fmt.Println()
-				fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-				fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
-				fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
-				fmt.Printf("      Region: %s\n", region)
-				fmt.Printf("      Error: %v\n", err)
-				fmt.Printf("      Note: Existing tokens were invalid and new authentication failed\n")
-				fmt.Println()
-				fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
-				fmt.Printf("      1. Tokens expired and credentials incorrect\n")
-				fmt.Printf("      2. Captcha challenge (API may require manual login)\n")
-				fmt.Printf("      3. Account locked or requires password reset\n")
-				fmt.Println()
-				fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
-				fmt.Printf("      1. Use manual authentication to get fresh tokens:\n")
-				fmt.Printf("         make manual-auth\n")
-				fmt.Printf("      2. Verify credentials in official app/website\n")
-				return false
-			}
-			printSuccess("Fresh authentication successful")
-		} else {
-			printSuccess("Authentication successful (using existing tokens)")
 		}
 	} else {
 		// No existing tokens, perform full authentication
@@ -486,6 +525,52 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 			return false
 		}
 		printSuccess("Authentication successful")
+
+		// Verify GetVehicles works after authentication
+		fmt.Print("   ⏳ Verifying vehicle list access... ")
+
+		// Create a new client to avoid any circuit breaker issues
+		freshClient := api.NewClient(
+			cfg.Hyundai.Username,
+			cfg.Hyundai.Password,
+			cfg.Hyundai.PIN,
+			cfg.Hyundai.Brand,
+			cfg.Hyundai.Region,
+			cfg.RateLimit.RequestsPerHour,
+			retryConfig,
+		)
+		freshClient.SetTokens(testClient.GetAccessToken(), testClient.GetRefreshToken())
+
+		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer verifyCancel()
+
+		vehicles, err := freshClient.GetVehicles(verifyCtx)
+		if err != nil {
+			printError("", fmt.Errorf("failed to get vehicles after authentication"))
+			fmt.Println()
+			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+			fmt.Printf("      Error: %v\n", err)
+			fmt.Printf("      Note: Authentication succeeded but GetVehicles failed\n")
+			fmt.Println()
+			fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Check if circuit breaker is blocking (may need longer delay)\n")
+			fmt.Printf("      2. Verify account has vehicles registered\n")
+			fmt.Printf("      3. Check API endpoint for region %s\n", region)
+			return false
+		}
+
+		printSuccess(fmt.Sprintf("Vehicle list retrieved (%d vehicle(s))", len(vehicles)))
+		if len(vehicles) > 0 {
+			fmt.Println()
+			fmt.Printf("   %sVehicles:%s\n", colorBlue, colorReset)
+			for i, vehicle := range vehicles {
+				name := vehicle.Nickname
+				if name == "" {
+					name = fmt.Sprintf("%d %s %s", vehicle.Year, vehicle.Make, vehicle.Model)
+				}
+				fmt.Printf("      %d. %s (VIN: %s)\n", i+1, name, maskString(vehicle.VIN))
+			}
+		}
 	}
 
 	// Show authentication details for EU region

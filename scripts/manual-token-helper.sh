@@ -133,6 +133,11 @@ echo ""
 echo "Paste your refresh_token:"
 read -r REFRESH_TOKEN
 
+echo ""
+echo "Optional - Paste your device_id (EU only, leave empty to auto-generate):"
+echo "(Look in browser Network tab for 'ccsp-device-id' header)"
+read -r DEVICE_ID
+
 # Validate tokens are not empty
 if [ -z "$ACCESS_TOKEN" ] || [ -z "$REFRESH_TOKEN" ]; then
     echo ""
@@ -205,6 +210,11 @@ cat > "$TOKEN_FILE" <<EOF
 ACCESS_TOKEN="$ACCESS_TOKEN"
 REFRESH_TOKEN="$REFRESH_TOKEN"
 EOF
+
+# Add device ID if provided
+if [ -n "$DEVICE_ID" ]; then
+    echo "DEVICE_ID=\"$DEVICE_ID\"" >> "$TOKEN_FILE"
+fi
 
 chmod 600 "$TOKEN_FILE"
 
