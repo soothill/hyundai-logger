@@ -51,10 +51,16 @@ case "$REGION" in
     "EU")
         case "$BRAND" in
             "hyundai")
-                LOGIN_URL="https://prd.eu-ccapi.hyundai.com:8080/api/v1/user/oauth2/authorize"
+                LOGIN_URL="https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/authorize"
+                TOKEN_URL="https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token"
                 ;;
             "kia")
-                LOGIN_URL="https://prd.eu-ccapi.kia.com:8080/api/v1/user/oauth2/authorize"
+                LOGIN_URL="https://idpconnect-eu.kia.com/auth/api/v2/user/oauth2/authorize"
+                TOKEN_URL="https://idpconnect-eu.kia.com/auth/api/v2/user/oauth2/token"
+                ;;
+            "genesis")
+                LOGIN_URL="https://idpconnect-eu.genesis.com/auth/realms/eugenesisidm/protocol/openid-connect/auth"
+                TOKEN_URL="https://idpconnect-eu.genesis.com/auth/realms/eugenesisidm/protocol/openid-connect/token"
                 ;;
             *)
                 echo "❌ Unsupported brand for EU region"
@@ -89,17 +95,36 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Instructions:"
 echo ""
-echo "1. Open your browser and go to the ${BRAND^} mobile website:"
-case "$BRAND" in
-    "hyundai")
-        echo "   https://www.mybluelink.ca/ (or your region's site)"
+echo "1. Open your browser and go to the ${BRAND^} website/app:"
+echo ""
+case "$REGION" in
+    "EU")
+        case "$BRAND" in
+            "hyundai")
+                echo "   Web: https://www.hyundai.com/eu/en/digital-services/myHyundai.html"
+                echo "   App: myHyundai/Bluelink mobile app (recommended for EU)"
+                ;;
+            "kia")
+                echo "   Web: https://www.kia.com/eu/owners/"
+                echo "   App: Kia Connect mobile app (recommended for EU)"
+                ;;
+        esac
         ;;
-    "kia")
-        echo "   https://www.kia.ca/owners (or your region's site)"
+    "US"|"CA")
+        case "$BRAND" in
+            "hyundai")
+                echo "   Web: https://owners.hyundaiusa.com/us/en/login"
+                echo "   App: myHyundai Bluelink mobile app"
+                ;;
+            "kia")
+                echo "   Web: https://owners.kia.com/"
+                echo "   App: Kia Access mobile app"
+                ;;
+        esac
         ;;
 esac
 echo ""
-echo "2. Open Browser Developer Tools:"
+echo "2. Open Browser Developer Tools (if using web):"
 echo "   - Chrome/Edge: F12 or Ctrl+Shift+I"
 echo "   - Firefox: F12 or Ctrl+Shift+I"
 echo "   - Safari: Cmd+Option+I"
@@ -108,14 +133,43 @@ echo "3. Go to the 'Network' tab in Developer Tools"
 echo ""
 echo "4. Login to your account (solve any captchas that appear)"
 echo ""
-echo "5. After successful login, look for a network request to:"
-echo "   - 'login' or 'oauth' or 'token'"
+echo "5. After successful login, look for network requests containing:"
+echo "   - 'oauth' or 'token' or 'authorize'"
+echo ""
+echo "   For $REGION region, look specifically for:"
+case "$REGION" in
+    "EU")
+        echo "   - Authorization request: /auth/api/v2/user/oauth2/authorize"
+        echo "   - Token request: /auth/api/v2/user/oauth2/token"
+        echo "   - Response with: access_token, refresh_token"
+        echo ""
+        echo "   IMPORTANT FOR EU: Also capture device_id!"
+        echo "   - Look for: /api/v1/spa/notifications/register"
+        echo "   - In Response, find: ResMsg.DeviceID"
+        echo "   - Or in subsequent Request headers: ccsp-device-id"
+        ;;
+    "US"|"CA")
+        echo "   - Request to: /v2/login or /oauth2/authorize"
+        echo "   - Response with: access_token, refresh_token"
+        ;;
+esac
 echo ""
 echo "6. Click on the request and find the Response containing:"
 echo "   - access_token"
 echo "   - refresh_token"
+if [ "$REGION" = "EU" ]; then
+    echo "   - device_id (from /notifications/register response)"
+fi
 echo ""
-echo "7. Copy these tokens and paste them below"
+echo "7. Copy these values and paste them below"
+echo ""
+echo "OAuth Endpoints to monitor:"
+if [ "$REGION" = "EU" ]; then
+    echo "   Authorization: $LOGIN_URL"
+    echo "   Token:         $TOKEN_URL"
+else
+    echo "   $LOGIN_URL"
+fi
 echo ""
 echo "Press Enter when you're ready to continue..."
 read -r
@@ -134,9 +188,36 @@ echo "Paste your refresh_token:"
 read -r REFRESH_TOKEN
 
 echo ""
-echo "Optional - Paste your device_id (EU only, leave empty to auto-generate):"
-echo "(Look in browser Network tab for 'ccsp-device-id' header)"
-read -r DEVICE_ID
+if [ "$REGION" = "EU" ]; then
+    echo "⚠️  IMPORTANT: Paste your device_id (REQUIRED for EU):"
+    echo ""
+    echo "Find device_id in browser Network tab:"
+    echo "  1. Look for request: /api/v1/spa/notifications/register"
+    echo "  2. In Response JSON, find: ResMsg.DeviceID"
+    echo "  3. Example: {\"ResMsg\":{\"DeviceID\":\"abc123...\"}}"
+    echo "  OR"
+    echo "  4. In subsequent request headers: ccsp-device-id"
+    echo ""
+    echo "Without a valid device_id, API calls will fail with 'Invalid deviceId' error."
+    echo ""
+    read -r DEVICE_ID
+
+    if [ -z "$DEVICE_ID" ]; then
+        echo ""
+        echo "⚠️  WARNING: No device_id provided!"
+        echo "EU region requires a valid device_id from the browser."
+        echo "The API will reject requests without it."
+        echo ""
+        read -p "Continue without device_id? (not recommended) (y/N): " CONTINUE_NO_DEVICE
+        if [[ ! "$CONTINUE_NO_DEVICE" =~ ^[Yy]$ ]]; then
+            echo "❌ Aborted. Please re-run and provide device_id."
+            exit 1
+        fi
+    fi
+else
+    echo "Optional - Paste your device_id (leave empty to skip):"
+    read -r DEVICE_ID
+fi
 
 # Validate tokens are not empty
 if [ -z "$ACCESS_TOKEN" ] || [ -z "$REFRESH_TOKEN" ]; then

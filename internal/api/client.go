@@ -1,1076 +1,345 @@
-// Copyright (c) 2025 Darren Soothill
-// Email: darren [at] soothill [dot] com
-// Licensed under the MIT License
-//
-
 package api
 
 import (
 	"bytes"
-	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/soothill/hyundai-logger/internal/cache"
-	"github.com/soothill/hyundai-logger/internal/circuitbreaker"
-	"github.com/soothill/hyundai-logger/internal/retry"
+	"github.com/soothill/hyundai-logger/internal/auth"
 )
 
-const (
-	// API call timeouts
-	apiCallTimeout    = 25 * time.Second // Default timeout for individual API calls
-	httpClientTimeout = 30 * time.Second // Overall HTTP client timeout
-
-	// HTTP transport settings
-	idleConnTimeout       = 90 * time.Second // Keep idle connections alive
-	tlsHandshakeTimeout   = 10 * time.Second // TLS handshake timeout
-	expectContinueTimeout = 1 * time.Second  // Expect: 100-continue timeout
-
-	// Circuit breaker settings
-	circuitBreakerTimeout     = 30 * time.Second // Wait time before trying half-open
-	circuitBreakerMaxFailures = 3                // Open circuit after N failures
-	circuitBreakerHalfOpenMax = 1                // Max requests in half-open state
-
-	// Cache settings
-	responseCacheTTL = 60 * time.Second // Cache TTL (reduces API calls by 20-40%)
-
-	// Rate limiting
-	maxRetryAfterSleep = 5 * time.Minute // Maximum sleep duration for rate limit backoff
-
-	// Connection pool settings
-	maxIdleConns        = 10 // Total idle connections
-	maxIdleConnsPerHost = 5  // Idle connections per host
-	maxConnsPerHost     = 10 // Max connections per host
-
-	// HTTP response limits
-	maxResponseBodySize = 10 * 1024 * 1024 // 10MB - prevent memory exhaustion from large responses
-)
-
-// Brand-specific authentication constants for EU region
-// These are used for stamp generation to avoid bot detection
-// Source: reverse engineered from official mobile apps (hyundai_kia_connect_api)
-var (
-	// CFB (Cipher Feedback) keys for XOR encryption - base64 decoded
-	cfbKia     = mustDecodeBase64("wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMbZs=")
-	cfbHyundai = mustDecodeBase64("RFtoRq/vDXJmRndoZaZQyfOot7OrIqGVFj96iY2WL3yyH5Z/pUvlUhqmCxD2t+D65SQ=")
-	cfbGenesis = mustDecodeBase64("RFtoRq/vDXJmRndoZaZQyYo3/qFLtVReW8P7utRPcc0ZxOzOELm9mexvviBk/qqIp4A=")
-
-	// Application IDs for each brand (EU region)
-	appIDKia     = "a2b8469b-30a3-4361-8e13-6fceea8fbe74"
-	appIDHyundai = "014d2225-8495-4735-812d-2616334fd15d"
-	appIDGenesis = "f11f2b86-e0e7-4851-90df-5600b01d8b70"
-)
-
-// mustDecodeBase64 decodes base64 or panics (used for constants at init time)
-func mustDecodeBase64(s string) []byte {
-	data, err := base64.StdEncoding.DecodeString(s)
-	if err != nil {
-		panic(fmt.Sprintf("failed to decode base64: %v", err))
-	}
-	return data
-}
-
-// Client represents a Hyundai Bluelink API client
+// Client represents the Hyundai/Kia API client
 type Client struct {
-	httpClient     *http.Client
-	baseURL        string
-	username       string
-	password       string
-	pin            string
-	brand          string
-	region         string
-	accessToken    string
-	refreshToken   string
-	deviceID       string // Random device ID for EU region authentication
-	rateLimiter    *AdaptiveRateLimiter
-	retrier        *retry.Retrier
-	circuitBreaker *circuitbreaker.CircuitBreaker
-	cache          *cache.Cache
-	cacheEnabled   bool
+	Region       string
+	Brand        string
+	httpClient   *http.Client
+	authClient   *auth.OAuth2Client
+	stampManager *auth.StampManager
+	baseURL      string
 }
 
-// NewClient creates a new Hyundai API client
-func NewClient(username, password, pin, brand, region string, requestsPerHour int, retryConfig retry.Config) *Client {
-	// Create adaptive rate limiter with dynamic adjustment capabilities
-	limiter := NewAdaptiveRateLimiter(requestsPerHour)
+// NewClient creates a new API client
+func NewClient(region, brand, username, password, pin, refreshToken string) (*Client, error) {
+	authClient := auth.NewOAuth2Client(region, brand, username, password, pin)
+	
+	// Try to authenticate with refresh token first
+	if refreshToken != "" {
+		if err := authClient.AuthenticateWithRefreshToken(refreshToken); err != nil {
+			return nil, fmt.Errorf("failed to authenticate with refresh token: %w", err)
+		}
+	} else {
+		// Try to load existing tokens
+		if err := authClient.AuthenticateWithRefreshToken(""); err != nil {
+			return nil, fmt.Errorf("no valid authentication available. Please run the token fetcher script first")
+		}
+	}
 
+	// Determine base URL based on region and brand
 	baseURL := getBaseURL(region, brand)
 
-	// Configure HTTP transport for connection pooling and reuse
-	transport := &http.Transport{
-		MaxIdleConns:          maxIdleConns,
-		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
-		MaxConnsPerHost:       maxConnsPerHost,
-		IdleConnTimeout:       idleConnTimeout,
-		DisableKeepAlives:     false, // Enable keep-alive
-		TLSHandshakeTimeout:   tlsHandshakeTimeout,
-		ExpectContinueTimeout: expectContinueTimeout,
+	client := &Client{
+		Region:     region,
+		Brand:      brand,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		authClient: authClient,
+		baseURL:    baseURL,
 	}
 
-	// Create circuit breaker with custom config
-	cbConfig := circuitbreaker.Config{
-		MaxFailures:         circuitBreakerMaxFailures,
-		Timeout:             circuitBreakerTimeout,
-		HalfOpenMaxRequests: circuitBreakerHalfOpenMax,
+	// Initialize stamp manager for EU regions
+	if region == "EU" {
+		client.stampManager = auth.NewStampManager(brand)
 	}
-	cb := circuitbreaker.New(cbConfig)
 
-	// Create cache with configured TTL (reduces API calls by 20-40%)
-	responseCache := cache.New(responseCacheTTL)
-
-	// Device ID will be registered with the API after authentication (EU region only)
-
-	return &Client{
-		httpClient: &http.Client{
-			Timeout:   httpClientTimeout,
-			Transport: transport,
-		},
-		baseURL:        baseURL,
-		username:       username,
-		password:       password,
-		pin:            pin,
-		brand:          brand,
-		region:         region,
-		deviceID:       "", // Will be set by registerDeviceID() after authentication
-		rateLimiter:    limiter,
-		retrier:        retry.New(retryConfig),
-		circuitBreaker: cb,
-		cache:          responseCache,
-		cacheEnabled:   true, // Enable caching by default
-	}
+	return client, nil
 }
 
-// getBaseURL returns the appropriate base URL for the region and brand
+// getBaseURL returns the API base URL for the given region and brand
 func getBaseURL(region, brand string) string {
-	// Based on reverse engineered endpoints
 	urls := map[string]map[string]string{
+		"EU": {
+			"hyundai": "https://prd.eu-ccapi.hyundai.com:8080",
+			"kia":     "https://prd.eu-ccapi.kia.com:8080",
+		},
 		"US": {
 			"hyundai": "https://api.telematics.hyundaiusa.com",
 			"kia":     "https://api.owners.kia.com",
 		},
 		"CA": {
-			"hyundai": "https://api.telematics.hyundaiusa.com",
-			"kia":     "https://api.owners.kia.com",
-		},
-		"EU": {
-			"hyundai": "https://prd.eu-ccapi.hyundai.com:8080",
-			"kia":     "https://prd.eu-ccapi.kia.com:8080",
+			"hyundai": "https://api.telematics.hyundaicanada.com",
+			"kia":     "https://api.owners.kia.ca",
 		},
 	}
 
 	if regionURLs, ok := urls[region]; ok {
-		if baseURL, ok := regionURLs[strings.ToLower(brand)]; ok {
-			return baseURL
+		if url, ok := regionURLs[brand]; ok {
+			return url
 		}
 	}
 
-	// Default to US Hyundai
-	return "https://api.telematics.hyundaiusa.com"
+	// Default to EU Hyundai
+	return "https://prd.eu-ccapi.hyundai.com:8080"
 }
 
-// buildRequest creates and configures an HTTP request with appropriate headers
-func (c *Client) buildRequest(ctx context.Context, method, endpoint string, body []byte) (*http.Request, error) {
-	var bodyReader io.Reader
+// doRequest performs an authenticated HTTP request
+func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, error) {
+	// Ensure we have a valid token
+	if err := c.authClient.EnsureValidToken(); err != nil {
+		return nil, fmt.Errorf("failed to ensure valid token: %w", err)
+	}
+
+	var reqBody io.Reader
 	if body != nil {
-		bodyReader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	// Set headers to mimic official Hyundai/Kia mobile apps to avoid bot detection
-	// These User-Agent strings are from real mobile apps
-	userAgent := c.getUserAgent()
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate, br")
-
-	// Add app-specific headers based on region
-	c.setRegionSpecificHeaders(req)
-
-	if c.accessToken != "" {
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-	}
-
-	return req, nil
-}
-
-// getUserAgent returns an appropriate User-Agent string based on brand and region
-func (c *Client) getUserAgent() string {
-	// EU region uses okhttp/3.10.0 (per evcc implementation)
-	// Other regions use okhttp/3.12.1
-	if c.region == "EU" {
-		return "okhttp/3.10.0"
-	}
-	return "okhttp/3.12.1"
-}
-
-// getServiceID returns the brand-specific CCSP service ID for EU region
-func (c *Client) getServiceID() string {
-	switch strings.ToLower(c.brand) {
-	case "kia":
-		return "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
-	case "hyundai":
-		return "6d477c38-3ca4-4cf3-9557-2a1929a94654"
-	case "genesis":
-		return "3020afa2-30ff-412a-aa51-d28fbe901e10"
-	default:
-		return "6d477c38-3ca4-4cf3-9557-2a1929a94654" // Default to Hyundai
-	}
-}
-
-// getApplicationID returns the brand-specific CCSP application ID for EU region
-func (c *Client) getApplicationID() string {
-	switch strings.ToLower(c.brand) {
-	case "kia":
-		return appIDKia
-	case "hyundai":
-		return appIDHyundai
-	case "genesis":
-		return appIDGenesis
-	default:
-		return appIDHyundai // Default to Hyundai
-	}
-}
-
-// setRegionSpecificHeaders adds region-specific headers to avoid bot detection
-func (c *Client) setRegionSpecificHeaders(req *http.Request) {
-	switch c.region {
-	case "EU":
-		// EU-specific headers - these are critical for avoiding bot detection
-		req.Header.Set("ccsp-service-id", c.getServiceID())
-		req.Header.Set("ccsp-application-id", c.getApplicationID())
-		// Only set device-id if we have one (not needed for device registration endpoint)
-		if c.deviceID != "" {
-			req.Header.Set("ccsp-device-id", c.deviceID)
+		jsonBody, err := json.Marshal(body)
+		if err != nil {
+			return nil, err
 		}
-		req.Header.Set("Stamp", c.generateStamp())
-		req.Header.Set("offset", "1") // Required by EU API
-		req.Header.Set("clientId", "ANDROID")
-		req.Header.Set("Host", "prd.eu-ccapi.hyundai.com:8080")
-	case "US", "CA":
-		// North America-specific headers
-		req.Header.Set("clientId", "ANDROID")
-		req.Header.Set("Host", "api.telematics.hyundaiusa.com")
-	}
-}
-
-// generateRandomHex creates a random 64-character hex string for device registration
-func generateRandomHex() string {
-	// Generate 32 random bytes (will be 64 hex characters)
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to timestamp-based ID if random fails
-		return fmt.Sprintf("%064x", time.Now().UnixNano())
-	}
-	return hex.EncodeToString(bytes)
-}
-
-// registerDeviceID registers with the EU API to get a valid device ID
-// This is required before making any other API calls in EU region
-func (c *Client) registerDeviceID(ctx context.Context) error {
-	if c.region != "EU" {
-		// Device registration only needed for EU region
-		return nil
+		reqBody = bytes.NewBuffer(jsonBody)
 	}
 
-	// Use a longer timeout for device registration (30 seconds)
-	// Some users report slow responses from the device registration endpoint
-	regCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	// Generate random push registration ID
-	pushRegID := generateRandomHex()
-
-	// Generate UUID for registration
-	uuid := generateRandomHex()[:36] // UUIDs are 36 chars with dashes, simplified here
-
-	endpoint := fmt.Sprintf("%s/api/v1/spa/notifications/register", c.baseURL)
-
-	// Brand-specific pushType (discovered from hyundai_kia_connect_api):
-	// - Hyundai EU: GCM
-	// - Kia EU: APNS
-	pushType := "GCM"
-	if strings.ToLower(c.brand) == "kia" {
-		pushType = "APNS"
-	}
-
-	payload := map[string]interface{}{
-		"pushRegId": pushRegID,
-		"pushType":  pushType,
-		"uuid":      uuid,
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+	url := c.baseURL + endpoint
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
-		return fmt.Errorf("marshaling device registration payload: %w", err)
+		return nil, err
 	}
 
-	fmt.Printf("Registering device with EU API (pushType=%s)...\n", pushType)
-
-	// Create a dedicated HTTP client for device registration
-	// Force HTTP/1.1 to match Python requests library behavior
-	transport := &http.Transport{
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		MaxIdleConns:          2,
-		MaxIdleConnsPerHost:   2,
-		IdleConnTimeout:       30 * time.Second,
-		ForceAttemptHTTP2:     false, // Force HTTP/1.1
+	// Set common headers
+	req.Header.Set("Authorization", "Bearer "+c.authClient.GetAccessToken())
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", c.authClient.Config.UserAgent)
+	
+	// Add device ID if available
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		req.Header.Set("deviceId", deviceID)
+		req.Header.Set("Device-Id", deviceID)
 	}
 
-	regClient := &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: transport,
+	// Sign request with stamp for EU regions
+	if c.stampManager != nil {
+		if err := c.stampManager.SignRequest(req); err != nil {
+			// Log warning but continue - stamp might not be required for all endpoints
+			fmt.Printf("Warning: Failed to sign request with stamp: %v\n", err)
+		}
 	}
 
-	// Build request with minimal headers (mimicking evcc implementation)
-	req, err := http.NewRequestWithContext(regCtx, "POST", endpoint, bytes.NewReader(payloadBytes))
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("building device registration request: %w", err)
-	}
-
-	// Set headers to match evcc okhttp/3.10.0 behavior
-	// CRITICAL: Device registration uses Stamp-only authentication, NOT Bearer token
-	// Including Authorization header causes 2+ minute timeout
-	req.Header.Set("User-Agent", "okhttp/3.10.0")
-	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-	req.Header.Set("ccsp-service-id", c.getServiceID())
-	req.Header.Set("ccsp-application-id", c.getApplicationID())
-	req.Header.Set("Stamp", c.generateStamp())
-	// DO NOT include Authorization header - device registration authenticates via Stamp only
-
-	// Execute request with dedicated client
-	resp, err := regClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("device registration request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Read response
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("reading device registration response: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("device registration failed with status %d: %s", resp.StatusCode, string(respBody))
+	// Check for successful response
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return respBody, nil
 	}
 
-	var regResp struct {
-		RetCode string `json:"retCode"`
-		ResMsg  struct {
-			DeviceID string `json:"deviceId"`
-		} `json:"resMsg"`
+	// Handle token expiration
+	if resp.StatusCode == 401 {
+		// Try to refresh token
+		if err := c.authClient.RefreshAccessToken(c.authClient.TokenStore.RefreshToken); err != nil {
+			return nil, fmt.Errorf("token refresh failed: %w", err)
+		}
+		
+		// Retry the request once
+		return c.doRequest(method, endpoint, body)
 	}
 
-	if err := json.Unmarshal(respBody, &regResp); err != nil {
-		return fmt.Errorf("parsing device registration response: %w", err)
-	}
-
-	if regResp.RetCode != "S" || regResp.ResMsg.DeviceID == "" {
-		return fmt.Errorf("device registration failed: %s", string(respBody))
-	}
-
-	// Store the device ID for future requests
-	c.deviceID = regResp.ResMsg.DeviceID
-	fmt.Printf("Device registered successfully: %s\n", c.deviceID[:16]+"...")
-
-	return nil
+	return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))
 }
 
-// generateStamp generates a cryptographically valid stamp for EU region authentication
-// This implements the XOR-based stamp generation used by official Hyundai/Kia mobile apps
-// The stamp prevents bot detection by proving we have the correct CFB key
-func (c *Client) generateStamp() string {
-	// Get brand-specific CFB key and APP_ID
-	cfb := c.getCFB()
-	appID := c.getAppID()
-
-	// Create raw data: "APP_ID:timestamp"
-	timestamp := time.Now().Unix()
-	rawData := []byte(fmt.Sprintf("%s:%d", appID, timestamp))
-
-	// XOR with CFB key (cycling through CFB if rawData is longer)
-	result := make([]byte, len(rawData))
-	for i := 0; i < len(rawData); i++ {
-		result[i] = cfb[i%len(cfb)] ^ rawData[i]
+// GetVehicles retrieves the list of vehicles
+func (c *Client) GetVehicles() (*VehiclesResponse, error) {
+	endpoint := "/api/v1/spa/vehicles"
+	if c.Region == "US" || c.Region == "CA" {
+		endpoint = "/v2/ac/v2/enrollment/details/" + c.authClient.Username
 	}
 
-	// Base64 encode the result
-	return base64.StdEncoding.EncodeToString(result)
+	data, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var response VehiclesResponse
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, err
+	}
+
+	// Store the first vehicle's ID if not already set
+	if len(response.Vehicles) > 0 && c.authClient.TokenStore != nil {
+		if c.authClient.TokenStore.VehicleID == "" {
+			c.authClient.TokenStore.VehicleID = response.Vehicles[0].VehicleID
+			auth.SaveTokens(c.authClient.TokenStore)
+		}
+	}
+
+	return &response, nil
 }
 
-// generateDeviceID generates a device ID from the cryptographic stamp
-// This follows the pattern used by hyundai_kia_connect_api: device_id = _get_device_id(stamp)
-// The device ID is derived by hashing the stamp with SHA-256
-func (c *Client) generateDeviceID(stamp string) string {
-	// Hash the stamp with SHA-256 to generate a stable device ID
-	hash := sha256.Sum256([]byte(stamp))
-	return hex.EncodeToString(hash[:])
+// GetVehicleStatus retrieves the status of a specific vehicle
+func (c *Client) GetVehicleStatus(vehicleID string) (*VehicleStatus, error) {
+	endpoint := fmt.Sprintf("/api/v2/spa/vehicles/%s/status", vehicleID)
+	if c.Region == "US" || c.Region == "CA" {
+		endpoint = fmt.Sprintf("/v2/ac/v2/rcs/rvs/vehicleStatus/%s", vehicleID)
+	}
+
+	// Include device ID in request body for some regions
+	requestBody := map[string]interface{}{}
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
+	}
+
+	data, err := c.doRequest("GET", endpoint, requestBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var status VehicleStatus
+	if err := json.Unmarshal(data, &status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
 }
 
-// getCFB returns the brand-specific CFB key for XOR encryption
-func (c *Client) getCFB() []byte {
-	switch strings.ToLower(c.brand) {
-	case "kia":
-		return cfbKia
-	case "hyundai":
-		return cfbHyundai
-	case "genesis":
-		return cfbGenesis
-	default:
-		return cfbHyundai // Default to Hyundai
-	}
-}
-
-// getAppID returns the brand-specific application ID
-func (c *Client) getAppID() string {
-	switch strings.ToLower(c.brand) {
-	case "kia":
-		return appIDKia
-	case "hyundai":
-		return appIDHyundai
-	case "genesis":
-		return appIDGenesis
-	default:
-		return appIDHyundai // Default to Hyundai
-	}
-}
-
-// handleRateLimitError handles rate limit errors by adjusting the rate limiter and sleeping
-func (c *Client) handleRateLimitError(ctx context.Context, resp *http.Response, err error) error {
-	rateLimitErr, ok := err.(*RateLimitError)
-	if !ok {
-		return err
+// RefreshVehicleStatus forces a refresh of vehicle status from the car
+func (c *Client) RefreshVehicleStatus(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v2/spa/vehicles/%s/status/refresh", vehicleID)
+	if c.Region == "US" || c.Region == "CA" {
+		endpoint = fmt.Sprintf("/v2/ac/v2/rcs/rvs/vehicleStatus/%s/refresh", vehicleID)
 	}
 
-	// Extract rate limit information
-	limit, remaining, reset := getRateLimitHeaders(resp)
-
-	// Inform adaptive rate limiter to adjust
-	c.rateLimiter.HandleRateLimitResponse(rateLimitErr.RetryAfter, remaining, limit)
-
-	// Log rate limit information (structured logging would be better)
-	fmt.Printf("Rate limit hit - Limit: %s, Remaining: %s, Reset: %s, Retry after: %s\n",
-		limit, remaining, reset, rateLimitErr.RetryAfter)
-	fmt.Printf("Rate limiter adjusted: %s\n", c.rateLimiter.GetStats().String())
-
-	// Sleep for the specified retry-after duration (capped for safety)
-	sleepDuration := rateLimitErr.RetryAfter
-	if sleepDuration > maxRetryAfterSleep {
-		sleepDuration = maxRetryAfterSleep
+	requestBody := map[string]interface{}{}
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	// Use timer to avoid leak if context is canceled
-	timer := time.NewTimer(sleepDuration)
-	defer timer.Stop()
-
-	select {
-	case <-timer.C:
-		// Continue after sleep
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
+	_, err := c.doRequest("POST", endpoint, requestBody)
 	return err
 }
 
-// doRequest performs an HTTP request with common headers and error handling
-// Does NOT include sensitive data in error messages
-// Accepts []byte body so it can be reused on retries (fixes retry bug)
-// Wrapped with circuit breaker to prevent cascading failures
-func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	var result []byte
+// GetLocation retrieves the vehicle's current location
+func (c *Client) GetLocation(vehicleID string) (*Location, error) {
+	endpoint := fmt.Sprintf("/api/v2/spa/vehicles/%s/location", vehicleID)
+	if c.Region == "US" || c.Region == "CA" {
+		endpoint = fmt.Sprintf("/v2/ac/v2/rcs/rvs/location/%s", vehicleID)
+	}
 
-	// Execute through circuit breaker
-	err := c.circuitBreaker.Execute(func() error {
-		if err := c.rateLimiter.Wait(ctx); err != nil {
-			return fmt.Errorf("rate limiter: %w", err)
-		}
-
-		req, err := c.buildRequest(ctx, method, endpoint, body)
-		if err != nil {
-			return err
-		}
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("making request to %s: %w", endpoint, err)
-		}
-		defer resp.Body.Close()
-
-		// Check for rate limiting before reading body
-		if err := checkRateLimit(resp); err != nil {
-			return c.handleRateLimitError(ctx, resp, err)
-		}
-
-		// Limit response size to prevent memory exhaustion
-		respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
-		if err != nil {
-			return fmt.Errorf("reading response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			// Include response body for debugging (truncate if too long)
-			bodyPreview := string(respBody)
-			if len(bodyPreview) > 200 {
-				bodyPreview = bodyPreview[:200] + "..."
-			}
-
-			// If we get 401 Unauthorized, trigger re-authentication
-			if resp.StatusCode == http.StatusUnauthorized {
-				return &AuthenticationError{
-					StatusCode: resp.StatusCode,
-					Message:    bodyPreview,
-				}
-			}
-
-			return fmt.Errorf("request failed: %s %s returned status %d: %s", method, endpoint, resp.StatusCode, bodyPreview)
-		}
-
-		result = respBody
-		return nil
-	})
-
-	return result, err
-}
-
-// doRequestWithRetry wraps doRequest with retry logic
-// Now accepts []byte instead of io.Reader so body can be reused on retries
-// Circuit breaker is already applied in doRequest(), so we don't double-wrap
-// Handles authentication errors by re-authenticating and retrying once
-func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
-	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		respBody, reqErr := c.doRequest(ctx, method, endpoint, body)
-
-		// If we get an authentication error, try to re-authenticate once
-		if IsAuthenticationError(reqErr) {
-			fmt.Printf("Authentication expired, attempting to re-authenticate...\n")
-
-			if authErr := c.Authenticate(ctx); authErr != nil {
-				return nil, fmt.Errorf("re-authentication failed: %w", authErr)
-			}
-
-			fmt.Printf("Re-authentication successful, retrying request...\n")
-			// Retry the request with new token
-			return c.doRequest(ctx, method, endpoint, body)
-		}
-
-		return respBody, reqErr
-	})
+	data, err := c.doRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Safe type assertion with check
-	respBody, ok := result.([]byte)
-	if !ok {
-		return nil, fmt.Errorf("unexpected response type")
-	}
-
-	return respBody, nil
-}
-
-// getCachedOrFetch attempts to get a value from cache, or fetches it using the provided function
-func (c *Client) getCachedOrFetch(cacheKey string, fetchFn func() (interface{}, error)) (interface{}, error) {
-	// Check cache first if enabled
-	if c.cacheEnabled {
-		if cached := c.cache.Get(cacheKey); cached != nil {
-			return cached, nil
-		}
-	}
-
-	// Fetch from API
-	result, err := fetchFn()
-	if err != nil {
+	var location Location
+	if err := json.Unmarshal(data, &location); err != nil {
 		return nil, err
 	}
 
-	// Store in cache before returning
-	if c.cacheEnabled {
-		c.cache.Set(cacheKey, result)
-	}
-
-	return result, nil
+	return &location, nil
 }
 
-// Authenticate performs authentication with the Hyundai API with retry logic
-// For EU region: Uses OAuth token endpoint with refresh_token grant
-// For US/CA region: Uses traditional login endpoint
-func (c *Client) Authenticate(ctx context.Context) error {
-	return c.retrier.Do(ctx, func() error {
-		// EU region uses OAuth token exchange with refresh_token
-		if c.region == "EU" {
-			return c.authenticateEU(ctx)
-		}
+// StartClimate starts the vehicle's climate control
+func (c *Client) StartClimate(vehicleID string, targetTemp float64) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/climate", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action":     "start",
+		"hvacType":   1,
+		"temperature": targetTemp,
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
+	}
 
-		// US/CA use traditional login
-		endpoint := fmt.Sprintf("%s/v2/login", c.baseURL)
-
-		data := url.Values{}
-		data.Set("username", c.username)
-		data.Set("password", c.password)
-
-		respBody, err := c.doRequest(ctx, "POST", endpoint, []byte(data.Encode()))
-		if err != nil {
-			return fmt.Errorf("authentication: %w", err)
-		}
-
-		var authResp AuthResponse
-		if err := json.Unmarshal(respBody, &authResp); err != nil {
-			return fmt.Errorf("parsing authentication response: %w", err)
-		}
-
-		c.accessToken = authResp.AccessToken
-		c.refreshToken = authResp.RefreshToken
-
-		return nil
-	})
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
 }
 
-// authenticateEU performs EU-specific OAuth authentication
-// In EU region, the "password" field contains the refresh_token (obtained manually via browser)
-// This method exchanges the refresh_token for an access_token
-func (c *Client) authenticateEU(ctx context.Context) error {
-	// Determine the OAuth token endpoint based on brand
-	var tokenEndpoint string
-	switch strings.ToLower(c.brand) {
-	case "hyundai":
-		tokenEndpoint = "https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token"
-	case "kia":
-		tokenEndpoint = "https://idpconnect-eu.kia.com/auth/api/v2/user/oauth2/token"
-	case "genesis":
-		tokenEndpoint = "https://idpconnect-eu.genesis.com/auth/realms/eugenesisidm/protocol/openid-connect/token"
-	default:
-		tokenEndpoint = "https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token"
+// StopClimate stops the vehicle's climate control
+func (c *Client) StopClimate(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/climate", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action": "stop",
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	// Get client credentials based on brand
-	var clientID, clientSecret string
-	switch strings.ToLower(c.brand) {
-	case "kia":
-		clientID = "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
-		clientSecret = "secret"
-	case "hyundai":
-		clientID = "6d477c38-3ca4-4cf3-9557-2a1929a94654"
-		clientSecret = "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV"
-	case "genesis":
-		clientID = "3020afa2-30ff-412a-aa51-d28fbe901e10"
-		clientSecret = "secret"
-	default:
-		clientID = "6d477c38-3ca4-4cf3-9557-2a1929a94654"
-		clientSecret = "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV"
-	}
-
-	// For EU, the "password" field actually contains the refresh_token
-	// This refresh_token is obtained manually via browser (make manual-auth)
-	refreshToken := c.password
-	if c.refreshToken != "" {
-		// If we have an existing refresh_token, use it instead
-		refreshToken = c.refreshToken
-	}
-
-	// OAuth token exchange: refresh_token → access_token
-	data := url.Values{}
-	data.Set("grant_type", "refresh_token")
-	data.Set("refresh_token", refreshToken)
-	data.Set("client_id", clientID)
-	data.Set("client_secret", clientSecret)
-
-	// Create request to OAuth token endpoint (not the vehicle API endpoint)
-	req, err := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(data.Encode()))
-	if err != nil {
-		return fmt.Errorf("creating OAuth token request: %w", err)
-	}
-
-	// Set headers for OAuth token request
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", c.getUserAgent())
-
-	// Execute request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("OAuth token request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Read response
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
-	if err != nil {
-		return fmt.Errorf("reading OAuth token response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("OAuth token request failed with status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	// Parse OAuth token response
-	var tokenResp struct {
-		TokenType    string `json:"token_type"`
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int    `json:"expires_in"`
-	}
-
-	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
-		return fmt.Errorf("parsing OAuth token response: %w", err)
-	}
-
-	// Store access_token WITHOUT the "Bearer " prefix
-	// The prefix is added automatically in buildRequest() when setting Authorization header
-	c.accessToken = tokenResp.AccessToken
-
-	// Store refresh_token if a new one was returned, otherwise keep existing
-	// Some OAuth implementations return a new refresh_token on every refresh,
-	// others only return it on the initial authentication
-	if tokenResp.RefreshToken != "" {
-		c.refreshToken = tokenResp.RefreshToken
-	}
-	// else: keep the existing c.refreshToken value
-
-	// Generate device ID for EU region if we don't have one
-	// The device ID is derived from the cryptographic stamp (similar to Python hyundai_kia_connect_api)
-	// Skip if we already have a device ID (e.g., loaded from file or manually provided)
-	if c.deviceID == "" && c.region == "EU" {
-		stamp := c.generateStamp()
-		c.deviceID = c.generateDeviceID(stamp)
-		fmt.Printf("Generated device ID from stamp: %s\n", c.deviceID[:16]+"...")
-	}
-
-	// Persist new tokens to .auth_tokens file for future use
-	// This ensures the file always has the latest valid tokens
-	if err := c.saveTokensToFile(); err != nil {
-		// Log the error but don't fail authentication
-		// The tokens are already in memory and working
-		fmt.Printf("Warning: Failed to save tokens to file: %v\n", err)
-	}
-
-	return nil
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
 }
 
-// saveTokensToFile saves the current tokens to .auth_tokens file
-// This is called after successful OAuth token refresh to persist the new tokens
-func (c *Client) saveTokensToFile() error {
-	tokenFile := ".auth_tokens"
-
-	// c.accessToken is already stored without "Bearer " prefix
-	// (the prefix is only added when building HTTP requests)
-
-	// Create file content with metadata
-	content := fmt.Sprintf(`# Authentication tokens (auto-updated)
-# Last updated: %s
-# Brand: %s
-# Region: %s
-
-ACCESS_TOKEN="%s"
-REFRESH_TOKEN="%s"
-DEVICE_ID="%s"
-`,
-		time.Now().Format(time.RFC1123),
-		c.brand,
-		c.region,
-		c.accessToken,
-		c.refreshToken,
-		c.deviceID,
-	)
-
-	// Write to file with restrictive permissions (600 = owner read/write only)
-	if err := os.WriteFile(tokenFile, []byte(content), 0600); err != nil {
-		return fmt.Errorf("writing token file: %w", err)
+// Lock locks the vehicle
+func (c *Client) Lock(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/door", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action": "close",
+		"pin":    c.authClient.PIN,
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	return nil
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
 }
 
-// GetVehicles retrieves the list of vehicles associated with the account with retry logic
-// EU and US/CA regions use different API endpoint structures
-func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
-	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-	defer cancel()
-
-	// EU uses /api/v1/spa/vehicles endpoint
-	// US/CA uses /v2/vehicles endpoint
-	var endpoint string
-	if c.region == "EU" {
-		endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles", c.baseURL)
-	} else {
-		endpoint = fmt.Sprintf("%s/v2/vehicles", c.baseURL)
+// Unlock unlocks the vehicle
+func (c *Client) Unlock(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/door", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action": "open",
+		"pin":    c.authClient.PIN,
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting vehicles: %w", err)
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
+}
+
+// StartCharge starts EV charging
+func (c *Client) StartCharge(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/charge", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action": "start",
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	var vehiclesResp VehiclesResponse
-	if err := json.Unmarshal(respBody, &vehiclesResp); err != nil {
-		return nil, fmt.Errorf("parsing vehicles response: %w", err)
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
+}
+
+// StopCharge stops EV charging
+func (c *Client) StopCharge(vehicleID string) error {
+	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/charge", vehicleID)
+	
+	requestBody := map[string]interface{}{
+		"action": "stop",
+	}
+	
+	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
+		requestBody["deviceId"] = deviceID
 	}
 
-	return vehiclesResp.Vehicles, nil
-}
-
-// GetVehicleStatus retrieves the current status of a vehicle with retry logic
-func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*VehicleStatus, error) {
-	cacheKey := fmt.Sprintf("status:%s", vehicleID)
-
-	result, err := c.getCachedOrFetch(cacheKey, func() (interface{}, error) {
-		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-		defer cancel()
-
-		// EU uses /api/v1/spa/vehicles/{id}/status/latest endpoint
-		// US/CA uses /v2/vehicles/{id}/status endpoint
-		var endpoint string
-		if c.region == "EU" {
-			endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/status/latest", c.baseURL, vehicleID)
-		} else {
-			endpoint = fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
-		}
-
-		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("getting vehicle status: %w", err)
-		}
-
-		var status VehicleStatus
-		if err := json.Unmarshal(respBody, &status); err != nil {
-			return nil, fmt.Errorf("parsing vehicle status response: %w", err)
-		}
-
-		return &status, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result.(*VehicleStatus), nil
-}
-
-// GetVehicleLocation retrieves the current location of a vehicle with retry logic
-func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Location, error) {
-	cacheKey := fmt.Sprintf("location:%s", vehicleID)
-
-	result, err := c.getCachedOrFetch(cacheKey, func() (interface{}, error) {
-		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-		defer cancel()
-
-		// EU uses /api/v1/spa/vehicles/{id}/location endpoint
-		// US/CA uses /v2/vehicles/{id}/location endpoint
-		var endpoint string
-		if c.region == "EU" {
-			endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/location", c.baseURL, vehicleID)
-		} else {
-			endpoint = fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
-		}
-
-		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
-		if err != nil {
-			return nil, fmt.Errorf("getting vehicle location: %w", err)
-		}
-
-		var location Location
-		if err := json.Unmarshal(respBody, &location); err != nil {
-			return nil, fmt.Errorf("parsing vehicle location response: %w", err)
-		}
-
-		return &location, nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result.(*Location), nil
-}
-
-// GetOdometer retrieves the odometer reading with retry logic
-func (c *Client) GetOdometer(ctx context.Context, vehicleID string) (*Odometer, error) {
-	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
-	defer cancel()
-
-	// EU uses /api/v1/spa/vehicles/{id}/status/latest endpoint (odometer in status)
-	// US/CA uses /v2/vehicles/{id}/odometer endpoint
-	var endpoint string
-	if c.region == "EU" {
-		endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/status/latest", c.baseURL, vehicleID)
-	} else {
-		endpoint = fmt.Sprintf("%s/v2/vehicles/%s/odometer", c.baseURL, vehicleID)
-	}
-
-	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting odometer: %w", err)
-	}
-
-	var odometer Odometer
-	if err := json.Unmarshal(respBody, &odometer); err != nil {
-		return nil, fmt.Errorf("parsing odometer response: %w", err)
-	}
-
-	return &odometer, nil
-}
-
-// GetCircuitBreakerState returns the current circuit breaker state
-func (c *Client) GetCircuitBreakerState() circuitbreaker.State {
-	return c.circuitBreaker.GetState()
-}
-
-// GetCircuitBreakerStats returns circuit breaker statistics
-func (c *Client) GetCircuitBreakerStats() (state circuitbreaker.State, failures int, lastFailure time.Time) {
-	return c.circuitBreaker.GetStats()
-}
-
-// GetRateLimiterStats returns rate limiter statistics
-func (c *Client) GetRateLimiterStats() RateLimiterStats {
-	return c.rateLimiter.GetStats()
-}
-
-// RecoverRateLimiter gradually recovers the rate limiter back to base rate
-// This should be called periodically (e.g., every 5-10 minutes) to allow
-// the rate limiter to recover after being throttled
-func (c *Client) RecoverRateLimiter() {
-	c.rateLimiter.GradualRecovery()
-}
-
-// GetAccessToken returns the current access token
-func (c *Client) GetAccessToken() string {
-	return c.accessToken
-}
-
-// GetRefreshToken returns the current refresh token
-func (c *Client) GetRefreshToken() string {
-	return c.refreshToken
-}
-
-// GetDeviceID returns the current device ID
-func (c *Client) GetDeviceID() string {
-	return c.deviceID
-}
-
-// SetDeviceID sets the device ID
-func (c *Client) SetDeviceID(deviceID string) {
-	c.deviceID = deviceID
-}
-
-// ResetRateLimiter resets the rate limiter to its base rate
-// This can be called manually to force a full recovery
-func (c *Client) ResetRateLimiter() {
-	c.rateLimiter.Reset()
-}
-
-// SetBaseURL sets a custom base URL for the API client
-// This is primarily used for testing with mock servers
-func (c *Client) SetBaseURL(baseURL string) {
-	c.baseURL = baseURL
-}
-
-// DisableCache disables response caching for testing
-func (c *Client) DisableCache() {
-	c.cacheEnabled = false
-}
-
-// SetTokens sets the access and refresh tokens directly
-// This is useful when using pre-existing tokens from manual authentication
-func (c *Client) SetTokens(accessToken, refreshToken string) {
-	c.accessToken = accessToken
-	c.refreshToken = refreshToken
-}
-
-// HasTokens returns true if the client has both access and refresh tokens set
-func (c *Client) HasTokens() bool {
-	return c.accessToken != "" && c.refreshToken != ""
-}
-
-// GetTokenExpiration parses a JWT token and returns its expiration time
-// Returns zero time if token is not a valid JWT
-func GetTokenExpiration(token string) (time.Time, error) {
-	// JWT format: header.payload.signature
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return time.Time{}, fmt.Errorf("invalid JWT format")
-	}
-
-	// Decode payload (base64url encoded)
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		// Try with padding
-		payload, err = base64.URLEncoding.DecodeString(parts[1])
-		if err != nil {
-			return time.Time{}, fmt.Errorf("decoding JWT payload: %w", err)
-		}
-	}
-
-	// Parse JSON payload
-	var claims struct {
-		Exp int64 `json:"exp"` // Expiration time (Unix timestamp)
-	}
-
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return time.Time{}, fmt.Errorf("parsing JWT claims: %w", err)
-	}
-
-	if claims.Exp == 0 {
-		return time.Time{}, fmt.Errorf("no expiration claim in token")
-	}
-
-	return time.Unix(claims.Exp, 0), nil
-}
-
-// CheckTokenExpiration checks if tokens are expiring soon and returns a warning message
-// Returns empty string if tokens are not expiring soon
-func (c *Client) CheckTokenExpiration() string {
-	if c.accessToken == "" && c.refreshToken == "" {
-		return ""
-	}
-
-	var warnings []string
-
-	// Check access token expiration (warn if < 5 minutes)
-	if c.accessToken != "" {
-		if exp, err := GetTokenExpiration(c.accessToken); err == nil {
-			timeUntilExp := time.Until(exp)
-			if timeUntilExp < 5*time.Minute && timeUntilExp > 0 {
-				warnings = append(warnings, fmt.Sprintf("Access token expires in %s", timeUntilExp.Round(time.Second)))
-			} else if timeUntilExp <= 0 {
-				warnings = append(warnings, "Access token has expired")
-			}
-		}
-	}
-
-	// Check refresh token expiration (warn if < 7 days)
-	if c.refreshToken != "" {
-		// Refresh token is not always a JWT (could be opaque string)
-		// Try to parse it, but don't fail if it's not JWT
-		if exp, err := GetTokenExpiration(c.refreshToken); err == nil {
-			timeUntilExp := time.Until(exp)
-			if timeUntilExp < 7*24*time.Hour && timeUntilExp > 0 {
-				warnings = append(warnings, fmt.Sprintf("⚠️  CRITICAL: Refresh token expires in %s - run 'make manual-auth' to renew", timeUntilExp.Round(time.Hour)))
-			} else if timeUntilExp <= 0 {
-				warnings = append(warnings, "⚠️  CRITICAL: Refresh token has expired - run 'make manual-auth' immediately")
-			}
-		}
-	}
-
-	if len(warnings) > 0 {
-		return strings.Join(warnings, "\n")
-	}
-
-	return ""
+	_, err := c.doRequest("POST", endpoint, requestBody)
+	return err
 }
