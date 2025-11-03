@@ -211,21 +211,39 @@ func (c *Client) buildRequest(ctx context.Context, method, endpoint string, body
 
 // getUserAgent returns an appropriate User-Agent string based on brand and region
 func (c *Client) getUserAgent() string {
-	// Use realistic User-Agent strings from official mobile apps
+	// EU region uses okhttp/3.10.0 (per evcc implementation)
+	// Other regions use okhttp/3.12.1
+	if c.region == "EU" {
+		return "okhttp/3.10.0"
+	}
+	return "okhttp/3.12.1"
+}
+
+// getServiceID returns the brand-specific CCSP service ID for EU region
+func (c *Client) getServiceID() string {
 	switch strings.ToLower(c.brand) {
 	case "kia":
-		// Kia Connect mobile app User-Agent
-		return "okhttp/3.12.1"
+		return "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
 	case "hyundai":
-		// Hyundai Bluelink mobile app User-Agent
-		if c.region == "EU" {
-			return "Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36"
-		}
-		return "okhttp/3.12.1"
+		return "6d477c38-3ca4-4cf3-9557-2a1929a94654"
 	case "genesis":
-		return "okhttp/3.12.1"
+		return "3020afa2-30ff-412a-aa51-d28fbe901e10"
 	default:
-		return "okhttp/3.12.1"
+		return "6d477c38-3ca4-4cf3-9557-2a1929a94654" // Default to Hyundai
+	}
+}
+
+// getApplicationID returns the brand-specific CCSP application ID for EU region
+func (c *Client) getApplicationID() string {
+	switch strings.ToLower(c.brand) {
+	case "kia":
+		return appIDKia
+	case "hyundai":
+		return appIDHyundai
+	case "genesis":
+		return appIDGenesis
+	default:
+		return appIDHyundai // Default to Hyundai
 	}
 }
 
@@ -234,13 +252,14 @@ func (c *Client) setRegionSpecificHeaders(req *http.Request) {
 	switch c.region {
 	case "EU":
 		// EU-specific headers - these are critical for avoiding bot detection
-		req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
-		req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
+		req.Header.Set("ccsp-service-id", c.getServiceID())
+		req.Header.Set("ccsp-application-id", c.getApplicationID())
 		// Only set device-id if we have one (not needed for device registration endpoint)
 		if c.deviceID != "" {
 			req.Header.Set("ccsp-device-id", c.deviceID)
 		}
 		req.Header.Set("Stamp", c.generateStamp())
+		req.Header.Set("offset", "1") // Required by EU API
 		req.Header.Set("clientId", "ANDROID")
 		req.Header.Set("Host", "prd.eu-ccapi.hyundai.com:8080")
 	case "US", "CA":
@@ -320,20 +339,21 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 		Transport: transport,
 	}
 
-	// Build request with minimal headers (mimicking Python okhttp)
+	// Build request with minimal headers (mimicking evcc implementation)
 	req, err := http.NewRequestWithContext(regCtx, "POST", endpoint, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return fmt.Errorf("building device registration request: %w", err)
 	}
 
-	// Set headers to match Python okhttp/3.12.0 behavior
-	req.Header.Set("User-Agent", "okhttp/3.12.0")
+	// Set headers to match evcc okhttp/3.10.0 behavior
+	// CRITICAL: Device registration uses Stamp-only authentication, NOT Bearer token
+	// Including Authorization header causes 2+ minute timeout
+	req.Header.Set("User-Agent", "okhttp/3.10.0")
 	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
-	req.Header.Set("Accept-Encoding", "gzip")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.accessToken))
-	req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
-	req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
+	req.Header.Set("ccsp-service-id", c.getServiceID())
+	req.Header.Set("ccsp-application-id", c.getApplicationID())
 	req.Header.Set("Stamp", c.generateStamp())
+	// DO NOT include Authorization header - device registration authenticates via Stamp only
 
 	// Execute request with dedicated client
 	resp, err := regClient.Do(req)
@@ -681,7 +701,7 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 
 	// Set headers for OAuth token request
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "okhttp/3.12.1")
+	req.Header.Set("User-Agent", c.getUserAgent())
 
 	// Execute request
 	resp, err := c.httpClient.Do(req)
