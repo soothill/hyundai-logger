@@ -16,6 +16,29 @@ The Hyundai/Kia API servers use bot detection mechanisms that may trigger captch
 
 We've implemented **cryptographically correct** authentication matching official mobile apps:
 
+### ✅ CRITICAL: Proper OAuth Token Flow (Latest Fix)
+
+**Important Change**: EU authentication now uses the correct OAuth token exchange flow:
+
+1. **Refresh Token as Primary Credential**
+   - The manual-auth process gives you a `REFRESH_TOKEN` (valid for 180 days)
+   - This refresh_token is used to obtain short-lived `access_tokens` (valid ~1 hour)
+   - Access tokens are automatically refreshed using the refresh_token
+   - **You no longer need your account password** after obtaining the refresh_token
+
+2. **Correct OAuth Endpoint**
+   - Authentication uses: `https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token`
+   - NOT the vehicle API endpoint (`prd.eu-ccapi.hyundai.com`)
+   - Sends: `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret`
+   - Receives: new `access_token` and updated `refresh_token`
+
+3. **How It Works**
+   - Manual-auth → get refresh_token (once every 180 days)
+   - Automatic auth → refresh_token → access_token (every hour)
+   - Vehicle API calls → use access_token
+
+We've implemented **cryptographically correct** authentication matching official mobile apps:
+
 ### ✅ NEW: Proper Stamp Generation (Critical Fix)
 
 The most important change for avoiding captchas is implementing the correct stamp generation algorithm:

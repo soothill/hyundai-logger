@@ -437,10 +437,16 @@ func (c *Client) getCachedOrFetch(cacheKey string, fetchFn func() (interface{}, 
 }
 
 // Authenticate performs authentication with the Hyundai API with retry logic
+// For EU region: Uses OAuth token endpoint with refresh_token grant
+// For US/CA region: Uses traditional login endpoint
 func (c *Client) Authenticate(ctx context.Context) error {
 	return c.retrier.Do(ctx, func() error {
-		// This is a simplified authentication flow
-		// Real implementation would need proper OAuth flow based on region
+		// EU region uses OAuth token exchange with refresh_token
+		if c.region == "EU" {
+			return c.authenticateEU(ctx)
+		}
+
+		// US/CA use traditional login
 		endpoint := fmt.Sprintf("%s/v2/login", c.baseURL)
 
 		data := url.Values{}
@@ -462,6 +468,101 @@ func (c *Client) Authenticate(ctx context.Context) error {
 
 		return nil
 	})
+}
+
+// authenticateEU performs EU-specific OAuth authentication
+// In EU region, the "password" field contains the refresh_token (obtained manually via browser)
+// This method exchanges the refresh_token for an access_token
+func (c *Client) authenticateEU(ctx context.Context) error {
+	// Determine the OAuth token endpoint based on brand
+	var tokenEndpoint string
+	switch strings.ToLower(c.brand) {
+	case "hyundai":
+		tokenEndpoint = "https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token"
+	case "kia":
+		tokenEndpoint = "https://idpconnect-eu.kia.com/auth/api/v2/user/oauth2/token"
+	case "genesis":
+		tokenEndpoint = "https://idpconnect-eu.genesis.com/auth/realms/eugenesisidm/protocol/openid-connect/token"
+	default:
+		tokenEndpoint = "https://idpconnect-eu.hyundai.com/auth/api/v2/user/oauth2/token"
+	}
+
+	// Get client credentials based on brand
+	var clientID, clientSecret string
+	switch strings.ToLower(c.brand) {
+	case "kia":
+		clientID = "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a"
+		clientSecret = "secret"
+	case "hyundai":
+		clientID = "6d477c38-3ca4-4cf3-9557-2a1929a94654"
+		clientSecret = "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV"
+	case "genesis":
+		clientID = "3020afa2-30ff-412a-aa51-d28fbe901e10"
+		clientSecret = "secret"
+	default:
+		clientID = "6d477c38-3ca4-4cf3-9557-2a1929a94654"
+		clientSecret = "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV"
+	}
+
+	// For EU, the "password" field actually contains the refresh_token
+	// This refresh_token is obtained manually via browser (make manual-auth)
+	refreshToken := c.password
+	if c.refreshToken != "" {
+		// If we have an existing refresh_token, use it instead
+		refreshToken = c.refreshToken
+	}
+
+	// OAuth token exchange: refresh_token → access_token
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("refresh_token", refreshToken)
+	data.Set("client_id", clientID)
+	data.Set("client_secret", clientSecret)
+
+	// Create request to OAuth token endpoint (not the vehicle API endpoint)
+	req, err := http.NewRequestWithContext(ctx, "POST", tokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return fmt.Errorf("creating OAuth token request: %w", err)
+	}
+
+	// Set headers for OAuth token request
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "okhttp/3.12.1")
+
+	// Execute request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("OAuth token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	if err != nil {
+		return fmt.Errorf("reading OAuth token response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("OAuth token request failed with status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse OAuth token response
+	var tokenResp struct {
+		TokenType    string `json:"token_type"`
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int    `json:"expires_in"`
+	}
+
+	if err := json.Unmarshal(respBody, &tokenResp); err != nil {
+		return fmt.Errorf("parsing OAuth token response: %w", err)
+	}
+
+	// Store tokens (access_token typically includes token_type prefix like "Bearer ")
+	c.accessToken = tokenResp.TokenType + " " + tokenResp.AccessToken
+	c.refreshToken = tokenResp.RefreshToken
+
+	return nil
 }
 
 // GetVehicles retrieves the list of vehicles associated with the account with retry logic

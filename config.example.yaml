@@ -10,8 +10,33 @@ hyundai:
   region: "na"            # Options: na (North America), eu (Europe), kr (Korea), cn (China), au (Australia), jp (Japan), in (India), br (Brazil)
   use_stamps: false       # Set to true if using BlueLink stamps
   stamp_url: ""           # URL for stamp server if using stamps
+
+  # EU Region Authentication (Important!)
+  # =====================================
+  # For EU region, authentication works differently due to captcha requirements:
+  #
+  # Option 1: Use .auth_tokens file (Recommended)
+  #   - Run: make manual-auth
+  #   - Follow the prompts to extract tokens from your browser
+  #   - Tokens are automatically loaded from .auth_tokens file
+  #   - No need to set password in config.yaml
+  #
+  # Option 2: Use environment variables
+  #   - export REFRESH_TOKEN="your-refresh-token-here"
+  #   - Refresh token is valid for 180 days
+  #
+  # Option 3: Set password field to refresh_token
+  #   - password: "your-refresh-token-here"
+  #   - This is the refresh_token from make manual-auth, NOT your account password
+  #
+  # The refresh_token is obtained once via browser login (solving captcha manually)
+  # and then used to automatically get access_tokens for API calls.
+  #
+  # See CAPTCHA_WORKAROUND.md for detailed instructions.
+
   # Region automatically configures:
   #   - API endpoint URLs
+  #   - OAuth authentication flow (EU vs NA/others)
   #   - Locale and language
   #   - Timezone
   #   - Measurement units (metric/imperial)
