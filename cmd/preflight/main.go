@@ -387,54 +387,97 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 		retryConfig,
 	)
 
-	// Attempt actual authentication with the API
+	// Check if we have pre-existing tokens (from manual auth or previous session)
+	usingExistingTokens := false
+	if cfg.Hyundai.AccessToken != "" && cfg.Hyundai.RefreshToken != "" {
+		testClient.SetTokens(cfg.Hyundai.AccessToken, cfg.Hyundai.RefreshToken)
+		usingExistingTokens = true
+	}
+
+	// Test authentication
 	authCtx, authCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer authCancel()
 
-	err = testClient.Authenticate(authCtx)
-	if err != nil {
-		printError("", fmt.Errorf("authentication failed"))
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
-		fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
-		fmt.Printf("      Region: %s\n", region)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Incorrect username or password\n")
-		fmt.Printf("      2. Account locked or requires password reset\n")
-		fmt.Printf("      3. Captcha challenge (API may require manual login)\n")
-		fmt.Printf("      4. API endpoint mismatch (check region setting)\n")
-		fmt.Printf("      5. Account not registered for Bluelink/UVO services\n")
-		fmt.Println()
-		fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Verify credentials by logging into official app/website:\n")
-		if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
-			if region == "EU" {
-				fmt.Printf("         Kia Connect App (iOS/Android)\n")
-				fmt.Printf("         Web: https://www.kia.com/eu/owners/\n")
-			} else {
-				fmt.Printf("         https://owners.kia.com/\n")
+	if usingExistingTokens {
+		// If we have existing tokens, test them by fetching vehicles
+		_, err = testClient.GetVehicles(authCtx)
+		if err != nil {
+			// Tokens might be expired, try to authenticate with credentials
+			printError("", fmt.Errorf("existing tokens invalid, attempting fresh authentication"))
+			fmt.Println()
+			err = testClient.Authenticate(authCtx)
+			if err != nil {
+				// Failed both with tokens and credentials
+				printError("", fmt.Errorf("authentication failed"))
+				fmt.Println()
+				fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+				fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
+				fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
+				fmt.Printf("      Region: %s\n", region)
+				fmt.Printf("      Error: %v\n", err)
+				fmt.Printf("      Note: Existing tokens were invalid and new authentication failed\n")
+				fmt.Println()
+				fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
+				fmt.Printf("      1. Tokens expired and credentials incorrect\n")
+				fmt.Printf("      2. Captcha challenge (API may require manual login)\n")
+				fmt.Printf("      3. Account locked or requires password reset\n")
+				fmt.Println()
+				fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
+				fmt.Printf("      1. Use manual authentication to get fresh tokens:\n")
+				fmt.Printf("         make manual-auth\n")
+				fmt.Printf("      2. Verify credentials in official app/website\n")
+				return false
 			}
+			printSuccess("Fresh authentication successful")
 		} else {
-			if region == "EU" {
-				fmt.Printf("         myHyundai/Bluelink App (iOS/Android)\n")
-				fmt.Printf("         Web: https://www.hyundai.com/eu/en/driving-hyundai/owning-a-hyundai/myhyundai.html\n")
-			} else if region == "US" || region == "NA" {
-				fmt.Printf("         https://owners.hyundaiusa.com/us/en/login\n")
-			} else {
-				fmt.Printf("         https://mybluelink.ca/\n")
-			}
+			printSuccess("Authentication successful (using existing tokens)")
 		}
-		fmt.Printf("      2. If captcha appears, use manual authentication:\n")
-		fmt.Printf("         make manual-auth\n")
-		fmt.Printf("      3. Check region setting matches your account (currently: %s)\n", region)
-		fmt.Printf("      4. For EU: Authentication primarily works through mobile apps\n")
-		return false
+	} else {
+		// No existing tokens, perform full authentication
+		err = testClient.Authenticate(authCtx)
+		if err != nil {
+			printError("", fmt.Errorf("authentication failed"))
+			fmt.Println()
+			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+			fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
+			fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
+			fmt.Printf("      Region: %s\n", region)
+			fmt.Printf("      Error: %v\n", err)
+			fmt.Println()
+			fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Incorrect username or password\n")
+			fmt.Printf("      2. Account locked or requires password reset\n")
+			fmt.Printf("      3. Captcha challenge (API may require manual login)\n")
+			fmt.Printf("      4. API endpoint mismatch (check region setting)\n")
+			fmt.Printf("      5. Account not registered for Bluelink/UVO services\n")
+			fmt.Println()
+			fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
+			fmt.Printf("      1. Verify credentials by logging into official app/website:\n")
+			if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
+				if region == "EU" {
+					fmt.Printf("         Kia Connect App (iOS/Android)\n")
+					fmt.Printf("         Web: https://www.kia.com/eu/owners/\n")
+				} else {
+					fmt.Printf("         https://owners.kia.com/\n")
+				}
+			} else {
+				if region == "EU" {
+					fmt.Printf("         myHyundai/Bluelink App (iOS/Android)\n")
+					fmt.Printf("         Web: https://www.hyundai.com/eu/en/driving-hyundai/owning-a-hyundai/myhyundai.html\n")
+				} else if region == "US" || region == "NA" {
+					fmt.Printf("         https://owners.hyundaiusa.com/us/en/login\n")
+				} else {
+					fmt.Printf("         https://mybluelink.ca/\n")
+				}
+			}
+			fmt.Printf("      2. If captcha appears, use manual authentication:\n")
+			fmt.Printf("         make manual-auth\n")
+			fmt.Printf("      3. Check region setting matches your account (currently: %s)\n", region)
+			fmt.Printf("      4. For EU: Authentication primarily works through mobile apps\n")
+			return false
+		}
+		printSuccess("Authentication successful")
 	}
-
-	printSuccess("Authentication successful")
 
 	// Show authentication details for EU region
 	if region == "EU" {

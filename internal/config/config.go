@@ -25,13 +25,15 @@ type Config struct {
 }
 
 type HyundaiConfig struct {
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	PIN       string `yaml:"pin"`
-	Brand     string `yaml:"brand"`
-	Region    string `yaml:"region"`
-	UseStamps bool   `yaml:"use_stamps"`
-	StampURL  string `yaml:"stamp_url"`
+	Username     string `yaml:"username"`
+	Password     string `yaml:"password"`
+	PIN          string `yaml:"pin"`
+	Brand        string `yaml:"brand"`
+	Region       string `yaml:"region"`
+	UseStamps    bool   `yaml:"use_stamps"`
+	StampURL     string `yaml:"stamp_url"`
+	AccessToken  string `yaml:"access_token"`  // Optional: pre-existing access token
+	RefreshToken string `yaml:"refresh_token"` // Optional: pre-existing refresh token
 }
 
 type RateLimitConfig struct {
@@ -179,6 +181,8 @@ func Load(configPath string) (*Config, error) {
 	setEnvString("HYUNDAI_PIN", &cfg.Hyundai.PIN)
 	setEnvString("HYUNDAI_BRAND", &cfg.Hyundai.Brand)
 	setEnvString("HYUNDAI_REGION", &cfg.Hyundai.Region)
+	setEnvString("ACCESS_TOKEN", &cfg.Hyundai.AccessToken)
+	setEnvString("REFRESH_TOKEN", &cfg.Hyundai.RefreshToken)
 
 	setEnvString("INFLUXDB_URL", &cfg.Database.URL)
 	setEnvString("INFLUXDB_TOKEN", &cfg.Database.Token)

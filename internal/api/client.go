@@ -602,3 +602,15 @@ func (c *Client) SetBaseURL(baseURL string) {
 func (c *Client) DisableCache() {
 	c.cacheEnabled = false
 }
+
+// SetTokens sets the access and refresh tokens directly
+// This is useful when using pre-existing tokens from manual authentication
+func (c *Client) SetTokens(accessToken, refreshToken string) {
+	c.accessToken = accessToken
+	c.refreshToken = refreshToken
+}
+
+// HasTokens returns true if the client has both access and refresh tokens set
+func (c *Client) HasTokens() bool {
+	return c.accessToken != "" && c.refreshToken != ""
+}
