@@ -559,8 +559,9 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 		return fmt.Errorf("parsing OAuth token response: %w", err)
 	}
 
-	// Store access_token (typically includes token_type prefix like "Bearer ")
-	c.accessToken = tokenResp.TokenType + " " + tokenResp.AccessToken
+	// Store access_token WITHOUT the "Bearer " prefix
+	// The prefix is added automatically in buildRequest() when setting Authorization header
+	c.accessToken = tokenResp.AccessToken
 
 	// Store refresh_token if a new one was returned, otherwise keep existing
 	// Some OAuth implementations return a new refresh_token on every refresh,
@@ -586,11 +587,8 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 func (c *Client) saveTokensToFile() error {
 	tokenFile := ".auth_tokens"
 
-	// Extract just the access_token without the "Bearer " prefix for storage
-	accessToken := c.accessToken
-	if strings.HasPrefix(accessToken, "Bearer ") {
-		accessToken = strings.TrimPrefix(accessToken, "Bearer ")
-	}
+	// c.accessToken is already stored without "Bearer " prefix
+	// (the prefix is only added when building HTTP requests)
 
 	// Create file content with metadata
 	content := fmt.Sprintf(`# Authentication tokens (auto-updated)
@@ -604,7 +602,7 @@ REFRESH_TOKEN="%s"
 		time.Now().Format(time.RFC1123),
 		c.brand,
 		c.region,
-		accessToken,
+		c.accessToken,
 		c.refreshToken,
 	)
 
@@ -617,11 +615,19 @@ REFRESH_TOKEN="%s"
 }
 
 // GetVehicles retrieves the list of vehicles associated with the account with retry logic
+// EU and US/CA regions use different API endpoint structures
 func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
 	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
 	defer cancel()
 
-	endpoint := fmt.Sprintf("%s/v2/vehicles", c.baseURL)
+	// EU uses /api/v2/spa/vehicles endpoint
+	// US/CA uses /v2/vehicles endpoint
+	var endpoint string
+	if c.region == "EU" {
+		endpoint = fmt.Sprintf("%s/api/v2/spa/vehicles", c.baseURL)
+	} else {
+		endpoint = fmt.Sprintf("%s/v2/vehicles", c.baseURL)
+	}
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
@@ -644,7 +650,14 @@ func (c *Client) GetVehicleStatus(ctx context.Context, vehicleID string) (*Vehic
 		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
 		defer cancel()
 
-		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
+		// EU uses /api/v1/spa/vehicles/{id}/status/latest endpoint
+		// US/CA uses /v2/vehicles/{id}/status endpoint
+		var endpoint string
+		if c.region == "EU" {
+			endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/status/latest", c.baseURL, vehicleID)
+		} else {
+			endpoint = fmt.Sprintf("%s/v2/vehicles/%s/status", c.baseURL, vehicleID)
+		}
 
 		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 		if err != nil {
@@ -674,7 +687,14 @@ func (c *Client) GetVehicleLocation(ctx context.Context, vehicleID string) (*Loc
 		ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
 		defer cancel()
 
-		endpoint := fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
+		// EU uses /api/v1/spa/vehicles/{id}/location endpoint
+		// US/CA uses /v2/vehicles/{id}/location endpoint
+		var endpoint string
+		if c.region == "EU" {
+			endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/location", c.baseURL, vehicleID)
+		} else {
+			endpoint = fmt.Sprintf("%s/v2/vehicles/%s/location", c.baseURL, vehicleID)
+		}
 
 		respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 		if err != nil {
@@ -701,7 +721,14 @@ func (c *Client) GetOdometer(ctx context.Context, vehicleID string) (*Odometer, 
 	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
 	defer cancel()
 
-	endpoint := fmt.Sprintf("%s/v2/vehicles/%s/odometer", c.baseURL, vehicleID)
+	// EU uses /api/v1/spa/vehicles/{id}/status/latest endpoint (odometer in status)
+	// US/CA uses /v2/vehicles/{id}/odometer endpoint
+	var endpoint string
+	if c.region == "EU" {
+		endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles/%s/status/latest", c.baseURL, vehicleID)
+	} else {
+		endpoint = fmt.Sprintf("%s/v2/vehicles/%s/odometer", c.baseURL, vehicleID)
+	}
 
 	respBody, err := c.doRequestWithRetry(ctx, "GET", endpoint, nil)
 	if err != nil {
