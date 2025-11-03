@@ -32,6 +32,23 @@ func IsRateLimitError(err error) bool {
 	return ok
 }
 
+// AuthenticationError represents a 401 Unauthorized error requiring re-authentication
+type AuthenticationError struct {
+	StatusCode int
+	Message    string
+}
+
+// Error implements the error interface
+func (e *AuthenticationError) Error() string {
+	return fmt.Sprintf("authentication failed (status %d): %s", e.StatusCode, e.Message)
+}
+
+// IsAuthenticationError checks if an error is an authentication error
+func IsAuthenticationError(err error) bool {
+	_, ok := err.(*AuthenticationError)
+	return ok
+}
+
 // parseRetryAfter parses the Retry-After header
 // Supports both delay-seconds and HTTP-date formats
 func parseRetryAfter(header string) time.Duration {

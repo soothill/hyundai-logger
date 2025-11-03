@@ -268,6 +268,11 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 		return nil
 	}
 
+	// Use a shorter timeout for device registration (10 seconds)
+	// to avoid blocking authentication flow
+	regCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	// Generate random push registration ID
 	pushRegID := generateRandomHex()
 
@@ -287,7 +292,7 @@ func (c *Client) registerDeviceID(ctx context.Context) error {
 		return fmt.Errorf("marshaling device registration payload: %w", err)
 	}
 
-	respBody, err := c.doRequest(ctx, "POST", endpoint, payloadBytes)
+	respBody, err := c.doRequest(regCtx, "POST", endpoint, payloadBytes)
 	if err != nil {
 		return fmt.Errorf("registering device: %w", err)
 	}
@@ -442,6 +447,15 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 			if len(bodyPreview) > 200 {
 				bodyPreview = bodyPreview[:200] + "..."
 			}
+
+			// If we get 401 Unauthorized, trigger re-authentication
+			if resp.StatusCode == http.StatusUnauthorized {
+				return &AuthenticationError{
+					StatusCode: resp.StatusCode,
+					Message:    bodyPreview,
+				}
+			}
+
 			return fmt.Errorf("request failed: %s %s returned status %d: %s", method, endpoint, resp.StatusCode, bodyPreview)
 		}
 
@@ -455,9 +469,25 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 // doRequestWithRetry wraps doRequest with retry logic
 // Now accepts []byte instead of io.Reader so body can be reused on retries
 // Circuit breaker is already applied in doRequest(), so we don't double-wrap
+// Handles authentication errors by re-authenticating and retrying once
 func (c *Client) doRequestWithRetry(ctx context.Context, method, endpoint string, body []byte) ([]byte, error) {
 	result, err := c.retrier.DoWithResult(ctx, func() (interface{}, error) {
-		return c.doRequest(ctx, method, endpoint, body)
+		respBody, reqErr := c.doRequest(ctx, method, endpoint, body)
+
+		// If we get an authentication error, try to re-authenticate once
+		if IsAuthenticationError(reqErr) {
+			fmt.Printf("Authentication expired, attempting to re-authenticate...\n")
+
+			if authErr := c.Authenticate(ctx); authErr != nil {
+				return nil, fmt.Errorf("re-authentication failed: %w", authErr)
+			}
+
+			fmt.Printf("Re-authentication successful, retrying request...\n")
+			// Retry the request with new token
+			return c.doRequest(ctx, method, endpoint, body)
+		}
+
+		return respBody, reqErr
 	})
 	if err != nil {
 		return nil, err
@@ -629,10 +659,14 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 	}
 	// else: keep the existing c.refreshToken value
 
-	// Register device ID with the API (required for EU region)
+	// Register device ID with the API (optional for EU region)
 	// This must be done AFTER getting the access token but BEFORE making any API calls
+	// If registration fails, we'll use a random device ID as fallback
 	if err := c.registerDeviceID(ctx); err != nil {
-		return fmt.Errorf("registering device ID: %w", err)
+		// Log warning but don't fail authentication
+		// Use a random device ID as fallback
+		c.deviceID = generateRandomHex()
+		fmt.Printf("Warning: Device registration failed, using random device ID: %v\n", err)
 	}
 
 	// Persist new tokens to .auth_tokens file for future use
@@ -856,4 +890,81 @@ func (c *Client) SetTokens(accessToken, refreshToken string) {
 // HasTokens returns true if the client has both access and refresh tokens set
 func (c *Client) HasTokens() bool {
 	return c.accessToken != "" && c.refreshToken != ""
+}
+
+// GetTokenExpiration parses a JWT token and returns its expiration time
+// Returns zero time if token is not a valid JWT
+func GetTokenExpiration(token string) (time.Time, error) {
+	// JWT format: header.payload.signature
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Time{}, fmt.Errorf("invalid JWT format")
+	}
+
+	// Decode payload (base64url encoded)
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		// Try with padding
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return time.Time{}, fmt.Errorf("decoding JWT payload: %w", err)
+		}
+	}
+
+	// Parse JSON payload
+	var claims struct {
+		Exp int64 `json:"exp"` // Expiration time (Unix timestamp)
+	}
+
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return time.Time{}, fmt.Errorf("parsing JWT claims: %w", err)
+	}
+
+	if claims.Exp == 0 {
+		return time.Time{}, fmt.Errorf("no expiration claim in token")
+	}
+
+	return time.Unix(claims.Exp, 0), nil
+}
+
+// CheckTokenExpiration checks if tokens are expiring soon and returns a warning message
+// Returns empty string if tokens are not expiring soon
+func (c *Client) CheckTokenExpiration() string {
+	if c.accessToken == "" && c.refreshToken == "" {
+		return ""
+	}
+
+	var warnings []string
+
+	// Check access token expiration (warn if < 5 minutes)
+	if c.accessToken != "" {
+		if exp, err := GetTokenExpiration(c.accessToken); err == nil {
+			timeUntilExp := time.Until(exp)
+			if timeUntilExp < 5*time.Minute && timeUntilExp > 0 {
+				warnings = append(warnings, fmt.Sprintf("Access token expires in %s", timeUntilExp.Round(time.Second)))
+			} else if timeUntilExp <= 0 {
+				warnings = append(warnings, "Access token has expired")
+			}
+		}
+	}
+
+	// Check refresh token expiration (warn if < 7 days)
+	if c.refreshToken != "" {
+		// Refresh token is not always a JWT (could be opaque string)
+		// Try to parse it, but don't fail if it's not JWT
+		if exp, err := GetTokenExpiration(c.refreshToken); err == nil {
+			timeUntilExp := time.Until(exp)
+			if timeUntilExp < 7*24*time.Hour && timeUntilExp > 0 {
+				warnings = append(warnings, fmt.Sprintf("⚠️  CRITICAL: Refresh token expires in %s - run 'make manual-auth' to renew", timeUntilExp.Round(time.Hour)))
+			} else if timeUntilExp <= 0 {
+				warnings = append(warnings, "⚠️  CRITICAL: Refresh token has expired - run 'make manual-auth' immediately")
+			}
+		}
+	}
+
+	if len(warnings) > 0 {
+		return strings.Join(warnings, "\n")
+	}
+
+	return ""
 }
