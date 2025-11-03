@@ -409,23 +409,28 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 		fmt.Printf("      5. Account not registered for Bluelink/UVO services\n")
 		fmt.Println()
 		fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Verify credentials by logging into official website:\n")
+		fmt.Printf("      1. Verify credentials by logging into official app/website:\n")
 		if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
 			if region == "EU" {
-				fmt.Printf("         https://www.kia.com/eu/owners/\n")
+				fmt.Printf("         Kia Connect App (iOS/Android)\n")
+				fmt.Printf("         Web: https://www.kia.com/eu/owners/\n")
 			} else {
-				fmt.Printf("         https://www.kia.ca/owners\n")
+				fmt.Printf("         https://owners.kia.com/\n")
 			}
 		} else {
 			if region == "EU" {
-				fmt.Printf("         https://www.bluelink.hyundai.com/\n")
+				fmt.Printf("         myHyundai/Bluelink App (iOS/Android)\n")
+				fmt.Printf("         Web: https://www.hyundai.com/eu/en/driving-hyundai/owning-a-hyundai/myhyundai.html\n")
+			} else if region == "US" || region == "NA" {
+				fmt.Printf("         https://owners.hyundaiusa.com/us/en/login\n")
 			} else {
-				fmt.Printf("         https://www.mybluelink.ca/\n")
+				fmt.Printf("         https://mybluelink.ca/\n")
 			}
 		}
 		fmt.Printf("      2. If captcha appears, use manual authentication:\n")
 		fmt.Printf("         make manual-auth\n")
 		fmt.Printf("      3. Check region setting matches your account (currently: %s)\n", region)
+		fmt.Printf("      4. For EU: Authentication primarily works through mobile apps\n")
 		return false
 	}
 
