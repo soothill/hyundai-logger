@@ -1,0 +1,39 @@
+Hyundai Logger Update Bundle
+Created: Mon Nov  3 15:56:04 UTC 2025
+Version: OAuth2 Authentication Update
+
+Contents:
+---------
+14 files total
+
+Source Files:
+7 Go files
+1 Python files
+1 YAML files
+2 Markdown files
+1 Shell scripts
+
+Key Changes:
+- OAuth2 authentication support
+- Device ID management
+- Refresh token handling
+- EU stamp signatures
+- Browser-based token fetcher
+- Updated API client
+
+File List:
+----------
+hyundai-logger-updated/CHANGES.md
+hyundai-logger-updated/Makefile
+hyundai-logger-updated/README.md
+hyundai-logger-updated/cmd/hyundai-logger/main.go
+hyundai-logger-updated/config.yaml
+hyundai-logger-updated/go.mod
+hyundai-logger-updated/internal/api/client.go
+hyundai-logger-updated/internal/api/types.go
+hyundai-logger-updated/internal/auth/oauth.go
+hyundai-logger-updated/internal/auth/stamp.go
+hyundai-logger-updated/internal/config/config.go
+hyundai-logger-updated/internal/database/client.go
+hyundai-logger-updated/scripts/get_refresh_token.py
+hyundai-logger-updated/setup.sh
