@@ -402,9 +402,18 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 		// If we have existing tokens, test them by fetching vehicles
 		_, err = testClient.GetVehicles(authCtx)
 		if err != nil {
-			// Tokens might be expired, try to authenticate with credentials
-			printError("", fmt.Errorf("existing tokens invalid, attempting fresh authentication"))
-			fmt.Println()
+			// Check if this is actually an auth error or something else
+			errStr := err.Error()
+			if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") || strings.Contains(errStr, "unauthorized") {
+				// Tokens are truly invalid
+				printError("", fmt.Errorf("existing tokens invalid, attempting fresh authentication"))
+				fmt.Println()
+			} else {
+				// Different error - show it for debugging
+				printError("", fmt.Errorf("GetVehicles failed: %v", err))
+				fmt.Printf("   %sNote:%s This may not be a token issue. Attempting fresh authentication anyway...\n", colorYellow, colorReset)
+				fmt.Println()
+			}
 			err = testClient.Authenticate(authCtx)
 			if err != nil {
 				// Failed both with tokens and credentials

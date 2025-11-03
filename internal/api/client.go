@@ -127,8 +127,7 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 	// Create cache with configured TTL (reduces API calls by 20-40%)
 	responseCache := cache.New(responseCacheTTL)
 
-	// Generate device ID for EU region authentication (64-char hex string)
-	deviceID := generateDeviceID()
+	// Device ID will be registered with the API after authentication (EU region only)
 
 	return &Client{
 		httpClient: &http.Client{
@@ -141,7 +140,7 @@ func NewClient(username, password, pin, brand, region string, requestsPerHour in
 		pin:            pin,
 		brand:          brand,
 		region:         region,
-		deviceID:       deviceID,
+		deviceID:       "", // Will be set by registerDeviceID() after authentication
 		rateLimiter:    limiter,
 		retrier:        retry.New(retryConfig),
 		circuitBreaker: cb,
@@ -236,7 +235,10 @@ func (c *Client) setRegionSpecificHeaders(req *http.Request) {
 		// EU-specific headers - these are critical for avoiding bot detection
 		req.Header.Set("ccsp-service-id", "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a")
 		req.Header.Set("ccsp-application-id", "99cfff84-f4e2-4be8-a5ed-e5b755eb6581")
-		req.Header.Set("ccsp-device-id", c.deviceID)
+		// Only set device-id if we have one (not needed for device registration endpoint)
+		if c.deviceID != "" {
+			req.Header.Set("ccsp-device-id", c.deviceID)
+		}
 		req.Header.Set("Stamp", c.generateStamp())
 		req.Header.Set("clientId", "ANDROID")
 		req.Header.Set("Host", "prd.eu-ccapi.hyundai.com:8080")
@@ -247,9 +249,8 @@ func (c *Client) setRegionSpecificHeaders(req *http.Request) {
 	}
 }
 
-// generateDeviceID creates a random 64-character hex device ID
-// This mimics the device registration from official mobile apps
-func generateDeviceID() string {
+// generateRandomHex creates a random 64-character hex string for device registration
+func generateRandomHex() string {
 	// Generate 32 random bytes (will be 64 hex characters)
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -257,6 +258,59 @@ func generateDeviceID() string {
 		return fmt.Sprintf("%064x", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(bytes)
+}
+
+// registerDeviceID registers with the EU API to get a valid device ID
+// This is required before making any other API calls in EU region
+func (c *Client) registerDeviceID(ctx context.Context) error {
+	if c.region != "EU" {
+		// Device registration only needed for EU region
+		return nil
+	}
+
+	// Generate random push registration ID
+	pushRegID := generateRandomHex()
+
+	// Generate UUID for registration
+	uuid := generateRandomHex()[:36] // UUIDs are 36 chars with dashes, simplified here
+
+	endpoint := fmt.Sprintf("%s/api/v1/spa/notifications/register", c.baseURL)
+
+	payload := map[string]interface{}{
+		"pushRegId": pushRegID,
+		"pushType":  "GCM",
+		"uuid":      uuid,
+	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshaling device registration payload: %w", err)
+	}
+
+	respBody, err := c.doRequest(ctx, "POST", endpoint, payloadBytes)
+	if err != nil {
+		return fmt.Errorf("registering device: %w", err)
+	}
+
+	var resp struct {
+		RetCode string `json:"retCode"`
+		ResMsg  struct {
+			DeviceID string `json:"deviceId"`
+		} `json:"resMsg"`
+	}
+
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return fmt.Errorf("parsing device registration response: %w", err)
+	}
+
+	if resp.RetCode != "S" || resp.ResMsg.DeviceID == "" {
+		return fmt.Errorf("device registration failed: %s", string(respBody))
+	}
+
+	// Store the device ID for future requests
+	c.deviceID = resp.ResMsg.DeviceID
+
+	return nil
 }
 
 // generateStamp generates a cryptographically valid stamp for EU region authentication
@@ -383,8 +437,12 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body []
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			// Include endpoint for better debugging but not response body
-			return fmt.Errorf("request failed: %s %s returned status %d", method, endpoint, resp.StatusCode)
+			// Include response body for debugging (truncate if too long)
+			bodyPreview := string(respBody)
+			if len(bodyPreview) > 200 {
+				bodyPreview = bodyPreview[:200] + "..."
+			}
+			return fmt.Errorf("request failed: %s %s returned status %d: %s", method, endpoint, resp.StatusCode, bodyPreview)
 		}
 
 		result = respBody
@@ -571,6 +629,12 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 	}
 	// else: keep the existing c.refreshToken value
 
+	// Register device ID with the API (required for EU region)
+	// This must be done AFTER getting the access token but BEFORE making any API calls
+	if err := c.registerDeviceID(ctx); err != nil {
+		return fmt.Errorf("registering device ID: %w", err)
+	}
+
 	// Persist new tokens to .auth_tokens file for future use
 	// This ensures the file always has the latest valid tokens
 	if err := c.saveTokensToFile(); err != nil {
@@ -620,11 +684,11 @@ func (c *Client) GetVehicles(ctx context.Context) ([]Vehicle, error) {
 	ctx, cancel := context.WithTimeout(ctx, apiCallTimeout)
 	defer cancel()
 
-	// EU uses /api/v2/spa/vehicles endpoint
+	// EU uses /api/v1/spa/vehicles endpoint
 	// US/CA uses /v2/vehicles endpoint
 	var endpoint string
 	if c.region == "EU" {
-		endpoint = fmt.Sprintf("%s/api/v2/spa/vehicles", c.baseURL)
+		endpoint = fmt.Sprintf("%s/api/v1/spa/vehicles", c.baseURL)
 	} else {
 		endpoint = fmt.Sprintf("%s/v2/vehicles", c.baseURL)
 	}
