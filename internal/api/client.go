@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -558,9 +559,59 @@ func (c *Client) authenticateEU(ctx context.Context) error {
 		return fmt.Errorf("parsing OAuth token response: %w", err)
 	}
 
-	// Store tokens (access_token typically includes token_type prefix like "Bearer ")
+	// Store access_token (typically includes token_type prefix like "Bearer ")
 	c.accessToken = tokenResp.TokenType + " " + tokenResp.AccessToken
-	c.refreshToken = tokenResp.RefreshToken
+
+	// Store refresh_token if a new one was returned, otherwise keep existing
+	// Some OAuth implementations return a new refresh_token on every refresh,
+	// others only return it on the initial authentication
+	if tokenResp.RefreshToken != "" {
+		c.refreshToken = tokenResp.RefreshToken
+	}
+	// else: keep the existing c.refreshToken value
+
+	// Persist new tokens to .auth_tokens file for future use
+	// This ensures the file always has the latest valid tokens
+	if err := c.saveTokensToFile(); err != nil {
+		// Log the error but don't fail authentication
+		// The tokens are already in memory and working
+		fmt.Printf("Warning: Failed to save tokens to file: %v\n", err)
+	}
+
+	return nil
+}
+
+// saveTokensToFile saves the current tokens to .auth_tokens file
+// This is called after successful OAuth token refresh to persist the new tokens
+func (c *Client) saveTokensToFile() error {
+	tokenFile := ".auth_tokens"
+
+	// Extract just the access_token without the "Bearer " prefix for storage
+	accessToken := c.accessToken
+	if strings.HasPrefix(accessToken, "Bearer ") {
+		accessToken = strings.TrimPrefix(accessToken, "Bearer ")
+	}
+
+	// Create file content with metadata
+	content := fmt.Sprintf(`# Authentication tokens (auto-updated)
+# Last updated: %s
+# Brand: %s
+# Region: %s
+
+ACCESS_TOKEN="%s"
+REFRESH_TOKEN="%s"
+`,
+		time.Now().Format(time.RFC1123),
+		c.brand,
+		c.region,
+		accessToken,
+		c.refreshToken,
+	)
+
+	// Write to file with restrictive permissions (600 = owner read/write only)
+	if err := os.WriteFile(tokenFile, []byte(content), 0600); err != nil {
+		return fmt.Errorf("writing token file: %w", err)
+	}
 
 	return nil
 }
