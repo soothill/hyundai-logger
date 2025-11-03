@@ -71,6 +71,8 @@ jobs:
       - name: Fix SARIF format issues
         if: github.event_name != 'pull_request'
         run: |
+          # Install jq if not present
+          sudo apt-get update && sudo apt-get install -y jq
           # Fix malformed SARIF output if present
           if [ -f trivy-results.sarif ]; then
             # Use jq to ensure proper SARIF format
