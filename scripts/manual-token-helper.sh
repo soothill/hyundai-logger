@@ -18,6 +18,9 @@ echo ""
 echo "If automatic authentication fails due to captcha, use this"
 echo "script to manually extract tokens from your browser."
 echo ""
+echo "💡 TIP: For automated token extraction, try the Python script:"
+echo "   https://gist.github.com/RustyDust/e2a7be978affd85fb5ef5a345f31f67a"
+echo ""
 
 # Function to get user input with default
 get_input() {

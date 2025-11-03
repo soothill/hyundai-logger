@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -158,6 +159,44 @@ func setEnvInt(envKey string, target *int) {
 	}
 }
 
+// loadTokensFromFile loads authentication tokens from .auth_tokens file if it exists
+// This file is created by the "make manual-auth" command
+func loadTokensFromFile(cfg *Config) {
+	// Try to read .auth_tokens from project root
+	tokenFile := ".auth_tokens"
+	data, err := os.ReadFile(tokenFile)
+	if err != nil {
+		// File doesn't exist or can't be read - this is OK, not all users will have it
+		return
+	}
+
+	// Parse the shell-style variable assignments
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse ACCESS_TOKEN="..." or REFRESH_TOKEN="..."
+		if strings.HasPrefix(line, "ACCESS_TOKEN=") {
+			value := strings.TrimPrefix(line, "ACCESS_TOKEN=")
+			value = strings.Trim(value, "\"'") // Remove quotes
+			if value != "" {
+				cfg.Hyundai.AccessToken = value
+			}
+		} else if strings.HasPrefix(line, "REFRESH_TOKEN=") {
+			value := strings.TrimPrefix(line, "REFRESH_TOKEN=")
+			value = strings.Trim(value, "\"'") // Remove quotes
+			if value != "" {
+				cfg.Hyundai.RefreshToken = value
+			}
+		}
+	}
+}
+
 // Load reads configuration from YAML file and environment variables
 // Environment variables take precedence over YAML config
 func Load(configPath string) (*Config, error) {
@@ -174,6 +213,9 @@ func Load(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
+
+	// Load tokens from .auth_tokens file if it exists (created by make manual-auth)
+	loadTokensFromFile(&cfg)
 
 	// Override with environment variables if present
 	setEnvString("HYUNDAI_USERNAME", &cfg.Hyundai.Username)

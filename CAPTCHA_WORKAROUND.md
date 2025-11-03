@@ -74,13 +74,40 @@ With these changes, captcha occurrences should be **dramatically reduced** becau
 
 ## Manual Authentication (If Captcha Still Appears)
 
-If you still encounter captchas, use the manual authentication helper:
+If you still encounter captchas, use one of these manual authentication methods:
 
-### Quick Start
+### Method 1: Manual Token Helper (Browser-Based)
 
 ```bash
 make manual-auth
 ```
+
+This interactive script guides you through capturing tokens from your browser's Developer Tools.
+
+### Method 2: Automated Python Script (Recommended)
+
+Use the community-maintained automated token extraction script:
+
+**GitHub Gist:** https://gist.github.com/RustyDust/e2a7be978affd85fb5ef5a345f31f67a
+
+This Python script automates the token extraction process using Selenium:
+
+```bash
+# Install requirements
+pip install selenium requests
+
+# Run the script
+python bluelinktoken.py --brand hyundai  # or --brand kia
+
+# Follow the browser prompts to login
+# Tokens are automatically extracted and displayed
+```
+
+**Benefits:**
+- Automated token extraction
+- Tokens valid for 180 days
+- Works with EU region
+- Saves time compared to manual browser inspection
 
 ### Step-by-Step Process
 
