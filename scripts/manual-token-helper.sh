@@ -133,17 +133,66 @@ echo ""
 echo "Paste your refresh_token:"
 read -r REFRESH_TOKEN
 
-# Validate tokens
+# Validate tokens are not empty
 if [ -z "$ACCESS_TOKEN" ] || [ -z "$REFRESH_TOKEN" ]; then
     echo ""
     echo "❌ Error: Both tokens are required"
     exit 1
 fi
 
+# Validate tokens by testing with API
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Step 4: Validating Tokens"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Testing tokens with API..."
+
+# Temporarily save tokens to file for validation
+cat > "$TOKEN_FILE.tmp" <<EOF
+ACCESS_TOKEN="$ACCESS_TOKEN"
+REFRESH_TOKEN="$REFRESH_TOKEN"
+EOF
+
+# Export tokens for validation
+export ACCESS_TOKEN
+export REFRESH_TOKEN
+
+# Test tokens by trying to fetch vehicles
+VALIDATION_OUTPUT=$(cd "$PROJECT_ROOT" && go run cmd/preflight/main.go 2>&1 | grep -A 3 "Testing API authentication")
+VALIDATION_RESULT=$?
+
+# Check if validation succeeded
+if echo "$VALIDATION_OUTPUT" | grep -q "Authentication successful (using existing tokens)"; then
+    echo "✓ Token validation successful!"
+    echo "  Tokens are valid and working"
+    rm -f "$TOKEN_FILE.tmp"
+elif echo "$VALIDATION_OUTPUT" | grep -q "existing tokens invalid"; then
+    echo "❌ Token validation failed"
+    echo "  The tokens appear to be invalid or expired"
+    echo ""
+    echo "Possible issues:"
+    echo "  - Tokens may have been copied incorrectly"
+    echo "  - Tokens may have expired (access tokens expire in 1-2 hours)"
+    echo "  - Wrong region or brand selected"
+    echo ""
+    rm -f "$TOKEN_FILE.tmp"
+    read -p "Continue anyway and save tokens? (y/N): " CONTINUE
+    if [[ ! "$CONTINUE" =~ ^[Yy]$ ]]; then
+        echo "❌ Aborted. Please try again with fresh tokens."
+        exit 1
+    fi
+    echo "⚠️  Saving tokens despite validation failure..."
+else
+    echo "⚠️  Could not validate tokens (preflight check unavailable)"
+    echo "  Tokens will be saved without validation"
+    rm -f "$TOKEN_FILE.tmp"
+fi
+
 # Save tokens to file
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 4: Saving Tokens"
+echo "Step 5: Saving Tokens"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -162,15 +211,16 @@ chmod 600 "$TOKEN_FILE"
 echo "✓ Tokens saved to: $TOKEN_FILE"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Step 5: Update Configuration"
+echo "Step 6: Next Steps"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "To use these tokens, add this to your .env file:"
+echo "✓ Tokens are automatically loaded from .auth_tokens"
 echo ""
-echo "ACCESS_TOKEN=\"$ACCESS_TOKEN\""
-echo "REFRESH_TOKEN=\"$REFRESH_TOKEN\""
+echo "You can now run:"
+echo "  make preflight  # Test connectivity"
+echo "  make run        # Start logging"
 echo ""
-echo "Or set environment variables:"
+echo "Optional - Set environment variables manually:"
 echo ""
 echo "export ACCESS_TOKEN=\"$ACCESS_TOKEN\""
 echo "export REFRESH_TOKEN=\"$REFRESH_TOKEN\""
