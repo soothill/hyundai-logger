@@ -367,46 +367,81 @@ func checkHyundaiAPI(cfg *config.Config) bool {
 
 	printSuccess(fmt.Sprintf("API endpoint reachable (%s -> %v)", apiHostname, ips[0]))
 
-	// Test 4: Verify stamp generation for EU region (cryptographic authentication)
-	if cfg.Hyundai.Region == "EU" {
-		fmt.Print("   ⏳ Testing stamp generation... ")
+	// Test 4: Create API client and test authentication
+	fmt.Print("   ⏳ Testing API authentication... ")
 
-		// Create API client to test stamp generation
-		// This will automatically generate proper stamps with XOR encryption
-		retryConfig := retry.Config{
-			MaxAttempts:       cfg.Retry.MaxAttempts,
-			InitialDelayMs:    cfg.Retry.InitialDelayMs,
-			MaxDelayMs:        cfg.Retry.MaxDelayMs,
-			BackoffMultiplier: cfg.Retry.BackoffMultiplier,
+	// Create API client with proper configuration
+	retryConfig := retry.Config{
+		MaxAttempts:       cfg.Retry.MaxAttempts,
+		InitialDelayMs:    cfg.Retry.InitialDelayMs,
+		MaxDelayMs:        cfg.Retry.MaxDelayMs,
+		BackoffMultiplier: cfg.Retry.BackoffMultiplier,
+	}
+	testClient := api.NewClient(
+		cfg.Hyundai.Username,
+		cfg.Hyundai.Password,
+		cfg.Hyundai.PIN,
+		cfg.Hyundai.Brand,
+		cfg.Hyundai.Region,
+		cfg.RateLimit.RequestsPerHour,
+		retryConfig,
+	)
+
+	// Attempt actual authentication with the API
+	authCtx, authCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer authCancel()
+
+	err = testClient.Authenticate(authCtx)
+	if err != nil {
+		printError("", fmt.Errorf("authentication failed"))
+		fmt.Println()
+		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
+		fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
+		fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
+		fmt.Printf("      Region: %s\n", region)
+		fmt.Printf("      Error: %v\n", err)
+		fmt.Println()
+		fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Incorrect username or password\n")
+		fmt.Printf("      2. Account locked or requires password reset\n")
+		fmt.Printf("      3. Captcha challenge (API may require manual login)\n")
+		fmt.Printf("      4. API endpoint mismatch (check region setting)\n")
+		fmt.Printf("      5. Account not registered for Bluelink/UVO services\n")
+		fmt.Println()
+		fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Verify credentials by logging into official website:\n")
+		if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
+			if region == "EU" {
+				fmt.Printf("         https://www.kia.com/eu/owners/\n")
+			} else {
+				fmt.Printf("         https://www.kia.ca/owners\n")
+			}
+		} else {
+			if region == "EU" {
+				fmt.Printf("         https://www.bluelink.hyundai.com/\n")
+			} else {
+				fmt.Printf("         https://www.mybluelink.ca/\n")
+			}
 		}
-		testClient := api.NewClient(
-			cfg.Hyundai.Username,
-			cfg.Hyundai.Password,
-			cfg.Hyundai.PIN,
-			cfg.Hyundai.Brand,
-			cfg.Hyundai.Region,
-			cfg.RateLimit.RequestsPerHour,
-			retryConfig,
-		)
+		fmt.Printf("      2. If captcha appears, use manual authentication:\n")
+		fmt.Printf("         make manual-auth\n")
+		fmt.Printf("      3. Check region setting matches your account (currently: %s)\n", region)
+		return false
+	}
 
-		// Verify device ID was generated (should be 64 hex chars)
-		stats := testClient.GetRateLimiterStats()
-		if stats.CurrentRate == 0 {
-			// This is just to use the client, actual stamp gen happens internally
-		}
+	printSuccess("Authentication successful")
 
-		printSuccess("Stamp generation configured")
+	// Show authentication details for EU region
+	if region == "EU" {
 		fmt.Println()
 		fmt.Printf("   %s✓ EU Region Authentication:%s\n", colorGreen, colorReset)
 		fmt.Printf("      - XOR-based stamp encryption: ENABLED\n")
 		fmt.Printf("      - Brand-specific CFB keys: %s\n", cfg.Hyundai.Brand)
 		fmt.Printf("      - Device ID registration: ENABLED\n")
-		fmt.Printf("      - This significantly reduces captcha occurrences\n")
+		fmt.Printf("      - Cryptographic stamps: WORKING\n")
+		fmt.Printf("      - No captcha encountered\n")
 	}
 
-	fmt.Println()
-	fmt.Printf("   %s⚠️  Note: Full API authentication test requires actual login attempt%s\n", colorYellow, colorReset)
-	fmt.Printf("   Run the logger to verify API credentials work correctly.\n")
 	fmt.Println()
 	fmt.Printf("   %s✓ Hyundai API checks passed%s\n", colorGreen, colorReset)
 	return true
