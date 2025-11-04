@@ -285,7 +285,10 @@ func (c *OAuth2Client) SetDeviceID(deviceID string) error {
 // GenerateDeviceID generates a new device ID if needed
 func (c *OAuth2Client) GenerateDeviceID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to a deterministic device ID if random fails
+		return fmt.Sprintf("fallback-device-id-%d", time.Now().Unix())
+	}
 	return fmt.Sprintf("%x-%x-%x-%x-%x",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

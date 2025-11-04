@@ -175,7 +175,7 @@ func (c *Client) GetVehicles() (*VehiclesResponse, error) {
 	if len(response.Vehicles) > 0 && c.authClient.TokenStore != nil {
 		if c.authClient.TokenStore.VehicleID == "" {
 			c.authClient.TokenStore.VehicleID = response.Vehicles[0].VehicleID
-			auth.SaveTokens(c.authClient.TokenStore)
+			_ = auth.SaveTokens(c.authClient.TokenStore) // Ignore error - token saving is best-effort
 		}
 	}
 
