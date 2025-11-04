@@ -241,15 +241,21 @@ func TestVehicleCoalescer(t *testing.T) {
 	vc := NewVehicleCoalescer(requestFn, 1*time.Second)
 
 	// Launch concurrent requests for same vehicle
+	// Use a starting gate to ensure all goroutines start at the same time
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start // Wait for signal to start
 			_, _ = vc.Get(context.Background(), "VIN123")
 		}()
 	}
 
+	// Let all goroutines reach the starting gate
+	time.Sleep(10 * time.Millisecond)
+	close(start) // Signal all goroutines to start simultaneously
 	wg.Wait()
 
 	// Should only call once (coalesced)
