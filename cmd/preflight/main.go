@@ -1,24 +1,16 @@
-// Copyright (c) 2025 Darren Soothill
-// Email: darren [at] soothill [dot] com
-// Licensed under the MIT License
-//
 // Preflight check tool to validate connectivity to InfluxDB and Hyundai API
-
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"net"
 	"os"
-	"strings"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/config"
-	"github.com/soothill/hyundai-logger/internal/retry"
 )
 
 const (
@@ -41,7 +33,7 @@ func main() {
 
 	// Load configuration
 	fmt.Printf("📋 Loading configuration from: %s\n", *configPath)
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		printError("Failed to load configuration", err)
 		os.Exit(1)
@@ -94,7 +86,7 @@ func checkInfluxDB(cfg *config.Config) bool {
 	client := influxdb2.NewClient(cfg.Database.URL, cfg.Database.Token)
 	defer client.Close()
 
-	// Test 1: Ping
+	// Test connection
 	fmt.Print("   ⏳ Testing connection... ")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -102,503 +94,127 @@ func checkInfluxDB(cfg *config.Config) bool {
 	health, err := client.Health(ctx)
 	if err != nil {
 		printError("", err)
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      URL: %s\n", cfg.Database.URL)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Check if InfluxDB is running:\n")
-		fmt.Printf("         curl -v %s/health\n", cfg.Database.URL)
-		fmt.Printf("      2. Verify URL in config.yaml is correct\n")
-		fmt.Printf("      3. Check if InfluxDB container is running:\n")
-		fmt.Printf("         docker ps | grep influx\n")
-		fmt.Printf("      4. Check InfluxDB logs:\n")
-		fmt.Printf("         docker logs influxdb\n")
 		return false
 	}
 
 	if health.Status != "pass" {
-		printError("", fmt.Errorf("InfluxDB health check failed: %s - %s", health.Status, *health.Message))
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Health Status: %s\n", health.Status)
-		fmt.Printf("      Message: %s\n", *health.Message)
+		printError("", fmt.Errorf("health check failed: %s", health.Message))
 		return false
 	}
 	printSuccess("Connected")
 
-	// Test 2: Authentication
+	// Test authentication
 	fmt.Print("   ⏳ Testing authentication... ")
-	_, err = client.Ready(ctx)
+	orgAPI := client.OrganizationsAPI()
+	_, err = orgAPI.FindOrganizationByName(ctx, cfg.Database.Organization)
 	if err != nil {
-		printError("", err)
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Organization: %s\n", cfg.Database.Organization)
-		fmt.Printf("      Token: %s\n", maskToken(cfg.Database.Token))
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Verify token has correct permissions\n")
-		fmt.Printf("      2. Check token in InfluxDB UI: %s\n", cfg.Database.URL)
-		fmt.Printf("      3. Generate new token if needed:\n")
-		fmt.Printf("         influx auth create --org %s \\\n", cfg.Database.Organization)
-		fmt.Printf("           --read-buckets --write-buckets\n")
+		printError("", fmt.Errorf("authentication failed or organization not found"))
 		return false
 	}
 	printSuccess("Authenticated")
 
-	// Test 3: Check bucket exists
-	fmt.Print("   ⏳ Checking bucket access... ")
+	// Test bucket access
+	fmt.Print("   ⏳ Testing bucket access... ")
 	bucketsAPI := client.BucketsAPI()
 	bucket, err := bucketsAPI.FindBucketByName(ctx, cfg.Database.Bucket)
 	if err != nil {
-		printError("", err)
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Bucket: %s\n", cfg.Database.Bucket)
-		fmt.Printf("      Organization: %s\n", cfg.Database.Organization)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sFix:%s Create the bucket:\n", colorYellow, colorReset)
-		fmt.Printf("      influx bucket create \\\n")
-		fmt.Printf("        --host %s \\\n", cfg.Database.URL)
-		fmt.Printf("        --token YOUR_TOKEN \\\n")
-		fmt.Printf("        --org %s \\\n", cfg.Database.Organization)
-		fmt.Printf("        --name %s \\\n", cfg.Database.Bucket)
-		fmt.Printf("        --retention 90d\n")
-		return false
+		printWarning(fmt.Sprintf("Bucket '%s' not found (will be created on first run)", cfg.Database.Bucket))
+	} else {
+		printSuccess(fmt.Sprintf("Bucket exists (ID: %s)", bucket.Id))
 	}
-	if bucket == nil {
-		printError("", fmt.Errorf("bucket '%s' not found", cfg.Database.Bucket))
-		fmt.Println()
-		fmt.Printf("   %sFix:%s Create the bucket:\n", colorYellow, colorReset)
-		fmt.Printf("      influx bucket create \\\n")
-		fmt.Printf("        --host %s \\\n", cfg.Database.URL)
-		fmt.Printf("        --token YOUR_TOKEN \\\n")
-		fmt.Printf("        --org %s \\\n", cfg.Database.Organization)
-		fmt.Printf("        --name %s \\\n", cfg.Database.Bucket)
-		fmt.Printf("        --retention 90d\n")
-		return false
-	}
-	printSuccess(fmt.Sprintf("Bucket '%s' exists", cfg.Database.Bucket))
 
-	// Test 4: Test write permissions
+	// Test write permission
 	fmt.Print("   ⏳ Testing write permissions... ")
 	writeAPI := client.WriteAPIBlocking(cfg.Database.Organization, cfg.Database.Bucket)
-	testPoint := influxdb2.NewPointWithMeasurement("preflight_test").
-		AddTag("test", "connectivity").
-		AddField("value", 1).
-		SetTime(time.Now())
-
+	testPoint := influxdb2.NewPoint(
+		"preflight_test",
+		map[string]string{"test": "true"},
+		map[string]interface{}{"value": 1},
+		time.Now(),
+	)
 	err = writeAPI.WritePoint(ctx, testPoint)
 	if err != nil {
-		printError("", err)
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Token may not have write permissions\n")
-		fmt.Printf("      Generate a new token with write access in InfluxDB UI\n")
+		printError("", fmt.Errorf("write test failed"))
 		return false
 	}
-	printSuccess("Write test successful")
+	printSuccess("Write permissions OK")
 
-	fmt.Println()
-	fmt.Printf("   %s✓ InfluxDB checks passed%s\n", colorGreen, colorReset)
 	return true
 }
 
 func checkHyundaiAPI(cfg *config.Config) bool {
-	fmt.Printf("   Brand: %s\n", cfg.Hyundai.Brand)
 	fmt.Printf("   Region: %s\n", cfg.Hyundai.Region)
+	fmt.Printf("   Brand: %s\n", cfg.Hyundai.Brand)
 	fmt.Printf("   Username: %s\n", maskString(cfg.Hyundai.Username))
 	fmt.Println()
 
-	// Test 1: Check credentials are set
-	fmt.Print("   ⏳ Validating credentials... ")
-	if cfg.Hyundai.Username == "" || cfg.Hyundai.Password == "" {
-		printError("", fmt.Errorf("username or password not set"))
-		fmt.Println()
-		fmt.Printf("   %sFix:%s Set credentials in your config.yaml:\n", colorYellow, colorReset)
-		fmt.Printf("      hyundai:\n")
-		fmt.Printf("        username: \"your.email@example.com\"\n")
-		fmt.Printf("        password: \"your-password\"\n")
-		return false
-	}
-	if cfg.Hyundai.Brand == "" {
-		printError("", fmt.Errorf("brand not set"))
-		fmt.Println()
-		fmt.Printf("   %sFix:%s Set brand in your config.yaml (hyundai, kia, or genesis)\n", colorYellow, colorReset)
-		return false
-	}
-	if cfg.Hyundai.Region == "" {
-		printError("", fmt.Errorf("region not set"))
-		fmt.Println()
-		fmt.Printf("   %sFix:%s Set region in your config.yaml (na, eu, kr, etc.)\n", colorYellow, colorReset)
-		return false
-	}
-	printSuccess("Credentials configured")
-
-	// Test 2: Check basic internet connectivity first
-	fmt.Print("   ⏳ Testing internet connectivity... ")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Test with a reliable public endpoint
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", "1.1.1.1:443")
-	if err != nil {
-		printError("", fmt.Errorf("no internet connection"))
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Cannot reach internet (tested with 1.1.1.1:443)\n")
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Check your network connection\n")
-		fmt.Printf("      2. Verify DNS is working: nslookup google.com\n")
-		fmt.Printf("      3. Check if proxy is required: echo $HTTP_PROXY\n")
-		fmt.Printf("      4. Test basic connectivity: ping 1.1.1.1\n")
-		return false
-	}
-	conn.Close()
-	printSuccess("Internet reachable")
-
-	// Test 3: Check API endpoint reachability
-	fmt.Print("   ⏳ Testing Hyundai API endpoint... ")
-
-	// Determine API endpoint based on region (case-insensitive)
-	var apiHost string
-	var apiHostname string
-	region := strings.ToUpper(cfg.Hyundai.Region)
-
-	switch region {
-	case "NA", "US", "CA":
-		apiHostname = "api.telematics.hyundaiusa.com"
-		apiHost = apiHostname + ":443"
-	case "EU":
-		apiHostname = "prd.eu-ccapi.hyundai.com"
-		apiHost = apiHostname + ":8080" // EU API uses port 8080, not 443
-	case "KR":
-		apiHostname = "prd.kr-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "CN":
-		apiHostname = "prd.cn-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "AU":
-		apiHostname = "prd.au-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "JP":
-		apiHostname = "prd.jp-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "IN":
-		apiHostname = "prd.in-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	case "BR":
-		apiHostname = "prd.br-ccapi.hyundai.com"
-		apiHost = apiHostname + ":443"
-	default:
-		apiHostname = "prd.eu-ccapi.hyundai.com"
-		apiHost = apiHostname + ":8080" // EU API uses port 8080
-	}
-
-	// For Kia, adjust endpoint
-	if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
-		if region == "EU" {
-			apiHostname = "prd.eu-ccapi.kia.com"
-			apiHost = apiHostname + ":8080" // Kia EU also uses port 8080
-		} else {
-			apiHostname = "api.owners.kia.com"
-			apiHost = apiHostname + ":443"
-		}
-	}
-
-	// Test DNS resolution first
-	ctx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel2()
-
-	ips, err := net.DefaultResolver.LookupIP(ctx2, "ip", apiHostname)
-	if err != nil {
-		printError("", fmt.Errorf("DNS resolution failed"))
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Cannot resolve hostname: %s\n", apiHostname)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Test DNS resolution: nslookup %s\n", apiHostname)
-		fmt.Printf("      2. Try alternative DNS: dig @8.8.8.8 %s\n", apiHostname)
-		fmt.Printf("      3. Check /etc/resolv.conf for DNS servers\n")
-		return false
-	}
-
-	// Test TCP connection to API endpoint
-	ctx3, cancel3 := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel3()
-
-	conn, err = dialer.DialContext(ctx3, "tcp", apiHost)
-	if err != nil {
-		printError("", fmt.Errorf("connection failed"))
-		fmt.Println()
-		fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-		fmt.Printf("      Hostname: %s\n", apiHostname)
-		fmt.Printf("      Resolved IPs: %v\n", ips)
-		fmt.Printf("      Full endpoint: %s\n", apiHost)
-		fmt.Printf("      Error: %v\n", err)
-		fmt.Println()
-		fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-		fmt.Printf("      1. Test direct connection:\n")
-		fmt.Printf("         curl -v --connect-timeout 10 https://%s\n", apiHost)
-		fmt.Printf("      2. Check firewall rules for this port:\n")
-		fmt.Printf("         sudo iptables -L -n\n")
-		fmt.Printf("      3. Test with netcat:\n")
-		fmt.Printf("         nc -zv %s\n", apiHost)
-		fmt.Printf("      4. Check if running in restricted network/container\n")
-		fmt.Printf("      5. Try from different network to rule out ISP blocking\n")
-		fmt.Println()
-		fmt.Printf("   %sNote:%s The API endpoint may have geographic or IP-based restrictions.\n", colorYellow, colorReset)
-		fmt.Printf("         If running in Docker, ensure network mode allows external access.\n")
-		return false
-	}
-	conn.Close()
-
-	printSuccess(fmt.Sprintf("API endpoint reachable (%s -> %v)", apiHostname, ips[0]))
-
-	// Test 4: Create API client and test authentication
-	fmt.Print("   ⏳ Testing API authentication... ")
-
-	// Create API client with proper configuration
-	retryConfig := retry.Config{
-		MaxAttempts:       cfg.Retry.MaxAttempts,
-		InitialDelayMs:    cfg.Retry.InitialDelayMs,
-		MaxDelayMs:        cfg.Retry.MaxDelayMs,
-		BackoffMultiplier: cfg.Retry.BackoffMultiplier,
-	}
-	testClient := api.NewClient(
+	// Create API client
+	fmt.Print("   ⏳ Creating API client... ")
+	client, err := api.NewClient(
+		cfg.Hyundai.Region,
+		cfg.Hyundai.Brand,
 		cfg.Hyundai.Username,
 		cfg.Hyundai.Password,
 		cfg.Hyundai.PIN,
-		cfg.Hyundai.Brand,
-		cfg.Hyundai.Region,
-		cfg.RateLimit.RequestsPerHour,
-		retryConfig,
+		cfg.Hyundai.RefreshToken,
 	)
+	if err != nil {
+		printError("", err)
+		fmt.Println()
+		fmt.Printf("   %sNote:%s If you're getting auth errors, try running:\n", colorYellow, colorReset)
+		fmt.Printf("         make oauth-manual\n")
+		return false
+	}
+	printSuccess("Client created")
 
-	// Check if we have pre-existing tokens (from manual auth or previous session)
-	usingExistingTokens := false
-	if cfg.Hyundai.AccessToken != "" && cfg.Hyundai.RefreshToken != "" {
-		testClient.SetTokens(cfg.Hyundai.AccessToken, cfg.Hyundai.RefreshToken)
-		if cfg.Hyundai.DeviceID != "" {
-			testClient.SetDeviceID(cfg.Hyundai.DeviceID)
-		}
-		usingExistingTokens = true
+	// Test GetVehicles
+	fmt.Print("   ⏳ Testing vehicle list access... ")
+	vehicles, err := client.GetVehicles()
+	if err != nil {
+		printError("", err)
+		fmt.Println()
+		fmt.Printf("   %sPossible causes:%s\n", colorYellow, colorReset)
+		fmt.Printf("      1. Invalid or expired refresh token\n")
+		fmt.Printf("      2. Missing or invalid device_id (EU only)\n")
+		fmt.Printf("      3. Network connectivity issues\n")
+		fmt.Println()
+		fmt.Printf("   %sFix:%s Run manual OAuth flow to get fresh tokens:\n", colorYellow, colorReset)
+		fmt.Printf("         make oauth-manual\n")
+		return false
 	}
 
-	// Test authentication
-	authCtx, authCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer authCancel()
+	// Check which field has vehicles
+	vehicleList := vehicles.Vehicles
+	if len(vehicleList) == 0 && len(vehicles.Result) > 0 {
+		vehicleList = vehicles.Result
+	}
 
-	if usingExistingTokens {
-		// Skip initial GetVehicles test to avoid circuit breaker issues
-		// We'll test GetVehicles after ensuring authentication is fresh
-		printSuccess("Using existing tokens, verifying with authentication...")
-		fmt.Println()
-
-		// Always re-authenticate to ensure we have valid tokens and a properly registered device
-		err = testClient.Authenticate(authCtx)
-		if err != nil {
-			// Authentication failed
-			printError("", fmt.Errorf("authentication failed"))
-			fmt.Println()
-			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-			fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
-			fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
-			fmt.Printf("      Region: %s\n", region)
-			fmt.Printf("      Error: %v\n", err)
-			fmt.Println()
-			fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Incorrect credentials\n")
-			fmt.Printf("      2. Captcha challenge (API may require manual login)\n")
-			fmt.Printf("      3. Account locked or requires password reset\n")
-			fmt.Println()
-			fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Use manual authentication to get fresh tokens:\n")
-			fmt.Printf("         make manual-auth\n")
-			fmt.Printf("      2. Verify credentials in official app/website\n")
-			return false
-		}
-		printSuccess("Authentication successful")
-
-		// Verify GetVehicles works after authentication
-		fmt.Print("   ⏳ Verifying vehicle list access... ")
-
-		// Create a new client to avoid circuit breaker issues from previous failed attempts
-		// The old client's circuit breaker may be open from failed GetVehicles calls
-		freshClient := api.NewClient(
-			cfg.Hyundai.Username,
-			cfg.Hyundai.Password,
-			cfg.Hyundai.PIN,
-			cfg.Hyundai.Brand,
-			cfg.Hyundai.Region,
-			cfg.RateLimit.RequestsPerHour,
-			retryConfig,
-		)
-		// Copy the fresh tokens and device ID to the new client
-		freshClient.SetTokens(testClient.GetAccessToken(), testClient.GetRefreshToken())
-		freshClient.SetDeviceID(testClient.GetDeviceID())
-
-		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer verifyCancel()
-
-		vehicles, err := freshClient.GetVehicles(verifyCtx)
-		if err != nil {
-			printError("", fmt.Errorf("failed to get vehicles after authentication"))
-			fmt.Println()
-			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-			fmt.Printf("      Error: %v\n", err)
-			fmt.Printf("      Note: Authentication succeeded but GetVehicles failed\n")
-			fmt.Println()
-			fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Check if circuit breaker is blocking (may need longer delay)\n")
-			fmt.Printf("      2. Verify account has vehicles registered\n")
-			fmt.Printf("      3. Check API endpoint for region %s\n", region)
-			return false
-		}
-
-		printSuccess(fmt.Sprintf("Vehicle list retrieved (%d vehicle(s))", len(vehicles)))
-		if len(vehicles) > 0 {
-			fmt.Println()
-			fmt.Printf("   %sVehicles:%s\n", colorBlue, colorReset)
-			for i, vehicle := range vehicles {
-				name := vehicle.Nickname
-				if name == "" {
-					name = fmt.Sprintf("%d %s %s", vehicle.Year, vehicle.Make, vehicle.Model)
-				}
-				fmt.Printf("      %d. %s (VIN: %s)\n", i+1, name, maskString(vehicle.VIN))
-			}
-		}
+	if len(vehicleList) == 0 {
+		printWarning("No vehicles found in account")
 	} else {
-		// No existing tokens, perform full authentication
-		err = testClient.Authenticate(authCtx)
-		if err != nil {
-			printError("", fmt.Errorf("authentication failed"))
-			fmt.Println()
-			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-			fmt.Printf("      Username: %s\n", maskString(cfg.Hyundai.Username))
-			fmt.Printf("      Brand: %s\n", cfg.Hyundai.Brand)
-			fmt.Printf("      Region: %s\n", region)
-			fmt.Printf("      Error: %v\n", err)
-			fmt.Println()
-			fmt.Printf("   %sPossible Causes:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Incorrect username or password\n")
-			fmt.Printf("      2. Account locked or requires password reset\n")
-			fmt.Printf("      3. Captcha challenge (API may require manual login)\n")
-			fmt.Printf("      4. API endpoint mismatch (check region setting)\n")
-			fmt.Printf("      5. Account not registered for Bluelink/UVO services\n")
-			fmt.Println()
-			fmt.Printf("   %sFix:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Verify credentials by logging into official app/website:\n")
-			if strings.ToLower(cfg.Hyundai.Brand) == "kia" {
-				if region == "EU" {
-					fmt.Printf("         Kia Connect App (iOS/Android)\n")
-					fmt.Printf("         Web: https://www.kia.com/eu/owners/\n")
-				} else {
-					fmt.Printf("         https://owners.kia.com/\n")
-				}
-			} else {
-				if region == "EU" {
-					fmt.Printf("         myHyundai/Bluelink App (iOS/Android)\n")
-					fmt.Printf("         Web: https://www.hyundai.com/eu/en/driving-hyundai/owning-a-hyundai/myhyundai.html\n")
-				} else if region == "US" || region == "NA" {
-					fmt.Printf("         https://owners.hyundaiusa.com/us/en/login\n")
-				} else {
-					fmt.Printf("         https://mybluelink.ca/\n")
-				}
-			}
-			fmt.Printf("      2. If captcha appears, use manual authentication:\n")
-			fmt.Printf("         make manual-auth\n")
-			fmt.Printf("      3. Check region setting matches your account (currently: %s)\n", region)
-			fmt.Printf("      4. For EU: Authentication primarily works through mobile apps\n")
-			return false
-		}
-		printSuccess("Authentication successful")
-
-		// Verify GetVehicles works after authentication
-		fmt.Print("   ⏳ Verifying vehicle list access... ")
-
-		// Create a new client to avoid any circuit breaker issues
-		freshClient := api.NewClient(
-			cfg.Hyundai.Username,
-			cfg.Hyundai.Password,
-			cfg.Hyundai.PIN,
-			cfg.Hyundai.Brand,
-			cfg.Hyundai.Region,
-			cfg.RateLimit.RequestsPerHour,
-			retryConfig,
-		)
-		freshClient.SetTokens(testClient.GetAccessToken(), testClient.GetRefreshToken())
-
-		verifyCtx, verifyCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer verifyCancel()
-
-		vehicles, err := freshClient.GetVehicles(verifyCtx)
-		if err != nil {
-			printError("", fmt.Errorf("failed to get vehicles after authentication"))
-			fmt.Println()
-			fmt.Printf("   %sDiagnostics:%s\n", colorYellow, colorReset)
-			fmt.Printf("      Error: %v\n", err)
-			fmt.Printf("      Note: Authentication succeeded but GetVehicles failed\n")
-			fmt.Println()
-			fmt.Printf("   %sTroubleshooting:%s\n", colorYellow, colorReset)
-			fmt.Printf("      1. Check if circuit breaker is blocking (may need longer delay)\n")
-			fmt.Printf("      2. Verify account has vehicles registered\n")
-			fmt.Printf("      3. Check API endpoint for region %s\n", region)
-			return false
-		}
-
-		printSuccess(fmt.Sprintf("Vehicle list retrieved (%d vehicle(s))", len(vehicles)))
-		if len(vehicles) > 0 {
-			fmt.Println()
-			fmt.Printf("   %sVehicles:%s\n", colorBlue, colorReset)
-			for i, vehicle := range vehicles {
-				name := vehicle.Nickname
-				if name == "" {
-					name = fmt.Sprintf("%d %s %s", vehicle.Year, vehicle.Make, vehicle.Model)
-				}
-				fmt.Printf("      %d. %s (VIN: %s)\n", i+1, name, maskString(vehicle.VIN))
-			}
+		printSuccess(fmt.Sprintf("Found %d vehicle(s)", len(vehicleList)))
+		for _, v := range vehicleList {
+			fmt.Printf("      - %s (%s)\n", v.Nickname, v.VIN)
 		}
 	}
 
-	// Show authentication details for EU region
-	if region == "EU" {
-		fmt.Println()
-		fmt.Printf("   %s✓ EU Region Authentication:%s\n", colorGreen, colorReset)
-		fmt.Printf("      - XOR-based stamp encryption: ENABLED\n")
-		fmt.Printf("      - Brand-specific CFB keys: %s\n", cfg.Hyundai.Brand)
-		fmt.Printf("      - Device ID registration: ENABLED\n")
-		fmt.Printf("      - Cryptographic stamps: WORKING\n")
-		fmt.Printf("      - No captcha encountered\n")
-	}
-
-	fmt.Println()
-	fmt.Printf("   %s✓ Hyundai API checks passed%s\n", colorGreen, colorReset)
 	return true
 }
 
 func printSuccess(msg string) {
-	fmt.Printf("%s✓ %s%s\n", colorGreen, msg, colorReset)
+	fmt.Printf("%s✓%s %s\n", colorGreen, colorReset, msg)
 }
 
 func printError(prefix string, err error) {
 	if prefix != "" {
-		fmt.Printf("%s✗ %s: %v%s\n", colorRed, prefix, err, colorReset)
+		fmt.Printf("%s✗%s %s: %v\n", colorRed, colorReset, prefix, err)
 	} else {
-		fmt.Printf("%s✗ %v%s\n", colorRed, err, colorReset)
+		fmt.Printf("%s✗%s %v\n", colorRed, colorReset, err)
 	}
+}
+
+func printWarning(msg string) {
+	fmt.Printf("%s⚠%s  %s\n", colorYellow, colorReset, msg)
 }
 
 func maskString(s string) string {
@@ -606,11 +222,4 @@ func maskString(s string) string {
 		return "****"
 	}
 	return s[:2] + "****" + s[len(s)-2:]
-}
-
-func maskToken(s string) string {
-	if len(s) <= 8 {
-		return "********"
-	}
-	return s[:4] + "..." + s[len(s)-4:]
 }

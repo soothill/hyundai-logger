@@ -6,7 +6,9 @@ import (
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
+	influxapi "github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
+	"github.com/influxdata/influxdb-client-go/v2/domain"
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/config"
 )
@@ -14,7 +16,7 @@ import (
 // Client represents the InfluxDB client
 type Client struct {
 	client   influxdb2.Client
-	writeAPI influxdb2.WriteAPI
+	writeAPI influxapi.WriteAPI
 	config   config.DatabaseConfig
 	org      string
 	bucket   string
@@ -75,8 +77,10 @@ func (c *Client) InitializeSchema() error {
 	bucket, err := bucketsAPI.FindBucketByName(context.Background(), c.bucket)
 	if err != nil {
 		// Create bucket with 90-day retention
-		_, err = bucketsAPI.CreateBucketWithName(context.Background(), org, c.bucket, 
-			90*24*60*60) // 90 days in seconds
+		retentionRule := domain.RetentionRule{
+			EverySeconds: 90 * 24 * 60 * 60, // 90 days in seconds
+		}
+		_, err = bucketsAPI.CreateBucketWithName(context.Background(), org, c.bucket, retentionRule)
 		if err != nil {
 			return fmt.Errorf("failed to create bucket: %w", err)
 		}
@@ -258,9 +262,9 @@ func (c *Client) QueryLatestStatus(vin string) (map[string]interface{}, error) {
 }
 
 // GetBatteryHistory retrieves battery level history for EV
-func (c *Client) GetBatteryHistory(vin string, hours int) ([]write.Point, error) {
+func (c *Client) GetBatteryHistory(vin string, hours int) ([]*write.Point, error) {
 	queryAPI := c.client.QueryAPI(c.org)
-	
+
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 			|> range(start: -%dh)
@@ -275,7 +279,7 @@ func (c *Client) GetBatteryHistory(vin string, hours int) ([]write.Point, error)
 		return nil, err
 	}
 
-	var points []write.Point
+	var points []*write.Point
 	for result.Next() {
 		record := result.Record()
 		p := influxdb2.NewPoint(
