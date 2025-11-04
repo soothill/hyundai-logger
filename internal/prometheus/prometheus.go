@@ -132,8 +132,8 @@ func StartMetricsServer(addr string, collector *metrics.Collector, dbHealthCheck
 	// Register endpoints
 	http.HandleFunc("/metrics", MetricsHandler(collector))
 	http.HandleFunc("/health", healthHandler.HTTPHandler())
-	http.HandleFunc("/healthz", healthHandler.LivenessHandler())   // Kubernetes liveness probe
-	http.HandleFunc("/ready", healthHandler.ReadinessHandler())    // Kubernetes readiness probe
+	http.HandleFunc("/healthz", healthHandler.LivenessHandler()) // Kubernetes liveness probe
+	http.HandleFunc("/ready", healthHandler.ReadinessHandler())  // Kubernetes readiness probe
 
 	// Create server with timeouts to prevent resource exhaustion
 	server := &http.Server{

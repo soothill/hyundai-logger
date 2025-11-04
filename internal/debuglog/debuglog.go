@@ -177,9 +177,9 @@ func (l *Logger) colorizeLevel(level Level) string {
 
 // Timer tracks operation timing
 type Timer struct {
-	logger    *Logger
-	operation string
-	start     time.Time
+	logger      *Logger
+	operation   string
+	start       time.Time
 	checkpoints []checkpoint
 }
 

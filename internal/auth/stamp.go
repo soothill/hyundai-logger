@@ -35,7 +35,7 @@ func NewStampManager(brand string) *StampManager {
 		"hyundai": "99cfff84-f4e2-4be8-a5ed-e5b755eb6581",
 		"kia":     "693a33fa-c117-43f2-ae3b-61a02d24f417",
 	}
-	
+
 	appID := appIDs[brand]
 	if appID == "" {
 		appID = appIDs["hyundai"] // default
@@ -65,7 +65,7 @@ func (sm *StampManager) GetStamp() (*Stamp, error) {
 // fetchRemoteStamp fetches a stamp from the remote stamp service
 func (sm *StampManager) fetchRemoteStamp() (*Stamp, error) {
 	// Using the community-maintained stamp service
-	stampURL := fmt.Sprintf("https://raw.githubusercontent.com/neoPix/bluelinky-stamps/master/%s-%s.v2.json", 
+	stampURL := fmt.Sprintf("https://raw.githubusercontent.com/neoPix/bluelinky-stamps/master/%s-%s.v2.json",
 		sm.brand, sm.appID)
 
 	resp, err := sm.httpClient.Get(stampURL)
@@ -76,15 +76,15 @@ func (sm *StampManager) fetchRemoteStamp() (*Stamp, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		// Try alternative stamp source
-		alternativeURL := fmt.Sprintf("https://raw.githubusercontent.com/Hacksore/bluelinky-stamps/master/%s.json", 
+		alternativeURL := fmt.Sprintf("https://raw.githubusercontent.com/Hacksore/bluelinky-stamps/master/%s.json",
 			sm.brand)
-		
+
 		resp, err = sm.httpClient.Get(alternativeURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch stamp from alternative source: %w", err)
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("stamp service returned status %d", resp.StatusCode)
 		}
@@ -110,11 +110,11 @@ func (sm *StampManager) fetchRemoteStamp() (*Stamp, error) {
 			Generated string `json:"generated"`
 			Frequency int    `json:"frequency"`
 		}
-		
+
 		if err := json.Unmarshal(body, &singleStamp); err != nil {
 			return nil, fmt.Errorf("failed to parse stamp data: %w", err)
 		}
-		
+
 		stampData = append(stampData, singleStamp)
 	}
 
@@ -179,7 +179,7 @@ func (sm *StampManager) SignRequest(req *http.Request) error {
 	// Add stamp headers
 	req.Header.Set("Stamp", stamp.Stamp)
 	req.Header.Set("AppId", stamp.AppID)
-	
+
 	// Generate a unique request ID
 	req.Header.Set("RequestId", generateRequestID())
 

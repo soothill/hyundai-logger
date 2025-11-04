@@ -156,11 +156,11 @@ type VehicleCoalescer struct {
 
 // Stats tracks coalescing statistics
 type Stats struct {
-	TotalRequests    int64
-	CoalescedHits    int64
-	UniqueRequests   int64
-	TimeoutErrors    int64
-	CacheHitRate     float64
+	TotalRequests  int64
+	CoalescedHits  int64
+	UniqueRequests int64
+	TimeoutErrors  int64
+	CacheHitRate   float64
 }
 
 // NewVehicleCoalescer creates a coalescer for vehicle requests

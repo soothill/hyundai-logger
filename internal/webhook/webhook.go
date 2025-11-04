@@ -28,11 +28,11 @@ const (
 	defaultWebhookTimeout = 10 * time.Second
 
 	// Alert level colors (hex format for Slack, used for both Slack and Discord)
-	colorGreen    = "#36a64f" // Info
-	colorOrange   = "#ff9900" // Warning
-	colorRed      = "#ff0000" // Error
-	colorDarkRed  = "#8b0000" // Critical
-	colorGray     = "#808080" // Default/Unknown
+	colorGreen   = "#36a64f" // Info
+	colorOrange  = "#ff9900" // Warning
+	colorRed     = "#ff0000" // Error
+	colorDarkRed = "#8b0000" // Critical
+	colorGray    = "#808080" // Default/Unknown
 
 	// Discord color codes (decimal equivalents)
 	discordColorGreen   = 3581519  // #36a64f
@@ -44,12 +44,12 @@ const (
 
 // Alert represents a notification to be sent
 type Alert struct {
-	Level       AlertLevel
-	Title       string
-	Message     string
-	Timestamp   time.Time
-	VehicleVIN  string
-	Metadata    map[string]interface{}
+	Level      AlertLevel
+	Title      string
+	Message    string
+	Timestamp  time.Time
+	VehicleVIN string
+	Metadata   map[string]interface{}
 }
 
 // Config holds webhook configuration
@@ -80,11 +80,11 @@ type DiscordConfig struct {
 
 // GenericConfig holds generic webhook configuration
 type GenericConfig struct {
-	Name       string
-	URL        string
-	Method     string
-	Headers    map[string]string
-	Template   string
+	Name     string
+	URL      string
+	Method   string
+	Headers  map[string]string
+	Template string
 }
 
 // Notifier sends notifications via webhooks
@@ -240,11 +240,11 @@ func (n *Notifier) sendDiscord(ctx context.Context, alert Alert) error {
 
 	embeds := []map[string]interface{}{
 		{
-			"title":  alert.Title,
+			"title":       alert.Title,
 			"description": alert.Message,
-			"color": color,
-			"fields": fields,
-			"timestamp": alert.Timestamp.Format(time.RFC3339),
+			"color":       color,
+			"fields":      fields,
+			"timestamp":   alert.Timestamp.Format(time.RFC3339),
 		},
 	}
 

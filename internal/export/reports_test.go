@@ -274,8 +274,8 @@ func TestConvertTripsToDataPoints(t *testing.T) {
 func TestEfficiencyCalculation(t *testing.T) {
 	// Test realistic efficiency calculation
 	stats := VehicleStats{
-		TotalDistance:   500.0,  // 500 km
-		TotalEnergyUsed: 95.0,   // 95 kWh
+		TotalDistance:   500.0, // 500 km
+		TotalEnergyUsed: 95.0,  // 95 kWh
 	}
 
 	// Calculate kWh per 100km

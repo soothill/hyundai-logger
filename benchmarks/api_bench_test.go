@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/soothill/hyundai-logger/internal/api"
-	"github.com/soothill/hyundai-logger/internal/retry"
 )
 
 // createTestAPIServer creates a test HTTP server for benchmarking
@@ -56,8 +55,8 @@ func createTestAPIServer() *httptest.Server {
 		status := &api.VehicleStatus{
 			LastUpdateTime: time.Now(),
 			OdometerStatus: api.OdometerStatus{
-				Value: 12345.6,
-				Unit:  1,
+				Value: 12345,
+				Unit:  "km",
 			},
 			EVStatus: &api.EVStatus{
 				BatteryLevel:  85,
@@ -72,12 +71,12 @@ func createTestAPIServer() *httptest.Server {
 	// Vehicle location endpoint
 	mux.HandleFunc("/v2/vehicles/test-1/location", func(w http.ResponseWriter, r *http.Request) {
 		location := &api.Location{
-			VIN:       "5NPE24AF1KH123456",
-			Timestamp: time.Now(),
-			Location: api.LocationData{
-				Latitude:  37.7749,
-				Longitude: -122.4194,
-			},
+			Latitude:  37.7749,
+			Longitude: -122.4194,
+			Altitude:  0,
+			Speed:     0,
+			Heading:   0,
+			Time:      time.Now(),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(location)
@@ -88,16 +87,9 @@ func createTestAPIServer() *httptest.Server {
 
 // BenchmarkAPIClientCreation benchmarks client instantiation
 func BenchmarkAPIClientCreation(b *testing.B) {
-	retryConfig := retry.Config{
-		MaxAttempts:       3,
-		InitialDelayMs:    100,
-		MaxDelayMs:        1000,
-		BackoffMultiplier: 2.0,
-	}
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = api.NewClient("user", "pass", "1234", "hyundai", "US", 100, retryConfig)
+		_, _ = api.NewClient("US", "hyundai", "user", "pass", "1234", "")
 	}
 }
 
@@ -116,15 +108,11 @@ func BenchmarkCacheMiss(b *testing.B) {
 
 // BenchmarkRateLimiterWait benchmarks rate limiter performance
 func BenchmarkRateLimiterWait(b *testing.B) {
-	retryConfig := retry.Config{
-		MaxAttempts:       1,
-		InitialDelayMs:    10,
-		MaxDelayMs:        100,
-		BackoffMultiplier: 2.0,
-	}
-
 	// High requests per hour to minimize rate limit delays in benchmark
-	client := api.NewClient("user", "pass", "1234", "hyundai", "US", 1000000, retryConfig)
+	client, err := api.NewClient("US", "hyundai", "user", "pass", "1234", "")
+	if err != nil {
+		b.Skip("Cannot create API client without valid credentials")
+	}
 	_ = client
 
 	// We can't easily benchmark the rate limiter without making actual requests
@@ -135,18 +123,21 @@ func BenchmarkRateLimiterWait(b *testing.B) {
 // BenchmarkJSONMarshal benchmarks JSON marshaling performance
 func BenchmarkJSONMarshal(b *testing.B) {
 	status := &api.VehicleStatus{
-		VIN:       "5NPE24AF1KH123456",
-		Timestamp: time.Now(),
-		Odometer:  12345.6,
-		FuelLevel: 75.5,
-		Engine: api.EngineStatus{
-			Running: false,
-			RangeKM: 450.0,
+		LastUpdateTime: time.Now(),
+		VehicleStatus: api.GeneralStatus{
+			Engine:         false,
+			Locked:         true,
+			FuelLevel:      75,
+			BatteryVoltage: 12.6,
 		},
-		EV: &api.EVStatus{
-			BatteryLevel: 85.5,
-			Charging:     true,
-			RangeKM:      400.0,
+		OdometerStatus: api.OdometerStatus{
+			Value: 12345,
+			Unit:  "km",
+		},
+		EVStatus: &api.EVStatus{
+			BatteryLevel:  85,
+			BatteryCharge: true,
+			RangeEV:       400.0,
 		},
 	}
 
@@ -159,18 +150,21 @@ func BenchmarkJSONMarshal(b *testing.B) {
 // BenchmarkJSONUnmarshal benchmarks JSON unmarshaling performance
 func BenchmarkJSONUnmarshal(b *testing.B) {
 	data := []byte(`{
-		"vin": "5NPE24AF1KH123456",
-		"timestamp": "2024-01-01T00:00:00Z",
-		"odometer": 12345.6,
-		"fuel_level": 75.5,
-		"engine": {
-			"running": false,
-			"range_km": 450.0
+		"lastUpdateTime": "2024-01-01T00:00:00Z",
+		"vehicleStatus": {
+			"engine": false,
+			"doorLock": true,
+			"fuelLevel": 75,
+			"battery": 12.6
 		},
-		"ev": {
-			"battery_level": 85.5,
-			"charging": true,
-			"range_km": 400.0
+		"odometer": {
+			"value": 12345,
+			"unit": "km"
+		},
+		"evStatus": {
+			"batteryLevel": 85,
+			"batteryPlugin": true,
+			"drvDistance": 400.0
 		}
 	}`)
 
@@ -215,18 +209,21 @@ func BenchmarkStructAllocation(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = &api.VehicleStatus{
-			VIN:       "5NPE24AF1KH123456",
-			Timestamp: time.Now(),
-			Odometer:  12345.6,
-			FuelLevel: 75.5,
-			Engine: api.EngineStatus{
-				Running: false,
-				RangeKM: 450.0,
+			LastUpdateTime: time.Now(),
+			VehicleStatus: api.GeneralStatus{
+				Engine:         false,
+				Locked:         true,
+				FuelLevel:      75,
+				BatteryVoltage: 12.6,
 			},
-			EV: &api.EVStatus{
-				BatteryLevel: 85.5,
-				Charging:     true,
-				RangeKM:      400.0,
+			OdometerStatus: api.OdometerStatus{
+				Value: 12345,
+				Unit:  "km",
+			},
+			EVStatus: &api.EVStatus{
+				BatteryLevel:  85,
+				BatteryCharge: true,
+				RangeEV:       400.0,
 			},
 		}
 	}

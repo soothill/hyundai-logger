@@ -45,18 +45,18 @@ const (
 
 // AuditEvent represents a single audit log entry
 type AuditEvent struct {
-	ID          string                 `json:"id"`
-	Timestamp   time.Time              `json:"timestamp"`
-	EventType   EventType              `json:"event_type"`
-	Severity    Severity               `json:"severity"`
-	Actor       string                 `json:"actor"`          // User/service that performed the action
-	Resource    string                 `json:"resource"`       // Resource affected
-	Action      string                 `json:"action"`         // Action performed
-	Result      string                 `json:"result"`         // success/failure
-	IPAddress   string                 `json:"ip_address,omitempty"`
-	UserAgent   string                 `json:"user_agent,omitempty"`
-	Details     map[string]interface{} `json:"details,omitempty"`
-	HMAC        string                 `json:"hmac"`           // Tamper-proof signature
+	ID        string                 `json:"id"`
+	Timestamp time.Time              `json:"timestamp"`
+	EventType EventType              `json:"event_type"`
+	Severity  Severity               `json:"severity"`
+	Actor     string                 `json:"actor"`    // User/service that performed the action
+	Resource  string                 `json:"resource"` // Resource affected
+	Action    string                 `json:"action"`   // Action performed
+	Result    string                 `json:"result"`   // success/failure
+	IPAddress string                 `json:"ip_address,omitempty"`
+	UserAgent string                 `json:"user_agent,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
+	HMAC      string                 `json:"hmac"` // Tamper-proof signature
 }
 
 // Logger handles audit logging
@@ -205,8 +205,8 @@ func (l *Logger) LogDataExport(actor, format string, recordCount int, result str
 		Action:    "export",
 		Result:    result,
 		Details: map[string]interface{}{
-			"format":        format,
-			"record_count":  recordCount,
+			"format":       format,
+			"record_count": recordCount,
 		},
 	}
 

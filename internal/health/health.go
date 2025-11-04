@@ -33,24 +33,24 @@ type ComponentHealth struct {
 
 // HealthResponse is the JSON response for the health endpoint
 type HealthResponse struct {
-	Status     Status                      `json:"status"`
-	Timestamp  time.Time                   `json:"timestamp"`
-	Uptime     string                      `json:"uptime"`
-	Version    string                      `json:"version,omitempty"`
-	Components map[string]ComponentHealth  `json:"components"`
-	Metrics    *HealthMetrics              `json:"metrics,omitempty"`
+	Status     Status                     `json:"status"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Uptime     string                     `json:"uptime"`
+	Version    string                     `json:"version,omitempty"`
+	Components map[string]ComponentHealth `json:"components"`
+	Metrics    *HealthMetrics             `json:"metrics,omitempty"`
 }
 
 // HealthMetrics contains key metrics for the health check
 type HealthMetrics struct {
-	TotalPolls       int64   `json:"total_polls"`
-	SuccessfulPolls  int64   `json:"successful_polls"`
-	FailedPolls      int64   `json:"failed_polls"`
-	PollSuccessRate  float64 `json:"poll_success_rate"`
-	LastPollDuration string  `json:"last_poll_duration"`
-	ConsecutiveErrors int64  `json:"consecutive_errors"`
-	TotalVehicles    int     `json:"total_vehicles"`
-	VehiclesCharging int     `json:"vehicles_charging"`
+	TotalPolls        int64   `json:"total_polls"`
+	SuccessfulPolls   int64   `json:"successful_polls"`
+	FailedPolls       int64   `json:"failed_polls"`
+	PollSuccessRate   float64 `json:"poll_success_rate"`
+	LastPollDuration  string  `json:"last_poll_duration"`
+	ConsecutiveErrors int64   `json:"consecutive_errors"`
+	TotalVehicles     int     `json:"total_vehicles"`
+	VehiclesCharging  int     `json:"vehicles_charging"`
 }
 
 // Checker defines the interface for health checks

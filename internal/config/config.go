@@ -22,56 +22,56 @@ type HyundaiConfig struct {
 	Username     string `yaml:"username"`
 	Password     string `yaml:"password"`
 	PIN          string `yaml:"pin"`
-	Brand        string `yaml:"brand"` // hyundai or kia
-	Region       string `yaml:"region"` // EU, US, CA
+	Brand        string `yaml:"brand"`         // hyundai or kia
+	Region       string `yaml:"region"`        // EU, US, CA
 	RefreshToken string `yaml:"refresh_token"` // New: OAuth refresh token
-	DeviceID     string `yaml:"device_id"` // New: Stored device ID
+	DeviceID     string `yaml:"device_id"`     // New: Stored device ID
 }
 
 // DatabaseConfig represents InfluxDB configuration
 type DatabaseConfig struct {
-	URL          string `yaml:"url"`
-	Token        string `yaml:"token"`
-	Organization string `yaml:"organization"`
-	Bucket       string `yaml:"bucket"`
-	BatchSize    int    `yaml:"batch_size"`
-	FlushInterval int   `yaml:"flush_interval_seconds"`
+	URL           string `yaml:"url"`
+	Token         string `yaml:"token"`
+	Organization  string `yaml:"organization"`
+	Bucket        string `yaml:"bucket"`
+	BatchSize     int    `yaml:"batch_size"`
+	FlushInterval int    `yaml:"flush_interval_seconds"`
 }
 
 // RateLimitConfig represents rate limiting configuration
 type RateLimitConfig struct {
-	RequestsPerHour    int                     `yaml:"requests_per_hour"`
-	PollIntervalMinutes int                    `yaml:"poll_interval_minutes"`
-	Periods            []TimePeriodConfig      `yaml:"periods"`
+	RequestsPerHour     int                `yaml:"requests_per_hour"`
+	PollIntervalMinutes int                `yaml:"poll_interval_minutes"`
+	Periods             []TimePeriodConfig `yaml:"periods"`
 }
 
 // TimePeriodConfig represents time-based polling configuration
 type TimePeriodConfig struct {
-	StartHour        int `yaml:"start_hour"`
-	EndHour          int `yaml:"end_hour"`
-	IntervalMinutes  int `yaml:"interval_minutes"`
+	StartHour       int `yaml:"start_hour"`
+	EndHour         int `yaml:"end_hour"`
+	IntervalMinutes int `yaml:"interval_minutes"`
 }
 
 // AlertsConfig represents email alerts configuration
 type AlertsConfig struct {
-	Enabled           bool     `yaml:"enabled"`
-	SMTPHost          string   `yaml:"smtp_host"`
-	SMTPPort          int      `yaml:"smtp_port"`
-	SMTPUsername      string   `yaml:"smtp_username"`
-	SMTPPassword      string   `yaml:"smtp_password"`
-	FromEmail         string   `yaml:"from_email"`
-	ToEmail           string   `yaml:"to_email"`
-	AlertThreshold    int      `yaml:"alert_threshold"`
-	AlertCooldownMins int      `yaml:"alert_cooldown_mins"`
+	Enabled           bool   `yaml:"enabled"`
+	SMTPHost          string `yaml:"smtp_host"`
+	SMTPPort          int    `yaml:"smtp_port"`
+	SMTPUsername      string `yaml:"smtp_username"`
+	SMTPPassword      string `yaml:"smtp_password"`
+	FromEmail         string `yaml:"from_email"`
+	ToEmail           string `yaml:"to_email"`
+	AlertThreshold    int    `yaml:"alert_threshold"`
+	AlertCooldownMins int    `yaml:"alert_cooldown_mins"`
 }
 
 // ChargingModeConfig represents EV charging detection configuration
 type ChargingModeConfig struct {
-	Enabled          bool `yaml:"enabled"`
-	IntervalMinutes  int  `yaml:"interval_minutes"`
-	FastChargeIntervalMinutes int `yaml:"fast_charge_interval_minutes"`
-	TrickleThresholdKW float64 `yaml:"trickle_threshold_kw"`
-	FastChargeThresholdKW float64 `yaml:"fast_charge_threshold_kw"`
+	Enabled                   bool    `yaml:"enabled"`
+	IntervalMinutes           int     `yaml:"interval_minutes"`
+	FastChargeIntervalMinutes int     `yaml:"fast_charge_interval_minutes"`
+	TrickleThresholdKW        float64 `yaml:"trickle_threshold_kw"`
+	FastChargeThresholdKW     float64 `yaml:"fast_charge_threshold_kw"`
 }
 
 // LoadConfig loads configuration from file or environment
@@ -87,11 +87,11 @@ func LoadConfig(path string) (*Config, error) {
 			FlushInterval: 10,
 		},
 		ChargingMode: ChargingModeConfig{
-			Enabled:         true,
-			IntervalMinutes: 2,
+			Enabled:                   true,
+			IntervalMinutes:           2,
 			FastChargeIntervalMinutes: 1,
-			TrickleThresholdKW: 3.0,
-			FastChargeThresholdKW: 20.0,
+			TrickleThresholdKW:        3.0,
+			FastChargeThresholdKW:     20.0,
 		},
 	}
 

@@ -58,14 +58,14 @@ func DefaultConfig() Config {
 
 // CircuitBreaker implements the circuit breaker pattern
 type CircuitBreaker struct {
-	mu                  sync.RWMutex
-	state               State
-	failures            int
-	lastFailureTime     time.Time
-	lastStateChange     time.Time
-	halfOpenRequests    int
-	config              Config
-	onStateChange       func(from, to State)
+	mu               sync.RWMutex
+	state            State
+	failures         int
+	lastFailureTime  time.Time
+	lastStateChange  time.Time
+	halfOpenRequests int
+	config           Config
+	onStateChange    func(from, to State)
 }
 
 // New creates a new circuit breaker with the given configuration

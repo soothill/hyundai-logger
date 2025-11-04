@@ -24,7 +24,7 @@ type Client struct {
 // NewClient creates a new API client
 func NewClient(region, brand, username, password, pin, refreshToken string) (*Client, error) {
 	authClient := auth.NewOAuth2Client(region, brand, username, password, pin)
-	
+
 	// Try to authenticate with refresh token first
 	if refreshToken != "" {
 		if err := authClient.AuthenticateWithRefreshToken(refreshToken); err != nil {
@@ -109,7 +109,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 	req.Header.Set("Authorization", "Bearer "+c.authClient.GetAccessToken())
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", c.authClient.Config.UserAgent)
-	
+
 	// Add device ID if available
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		req.Header.Set("deviceId", deviceID)
@@ -146,7 +146,7 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 		if err := c.authClient.RefreshAccessToken(c.authClient.TokenStore.RefreshToken); err != nil {
 			return nil, fmt.Errorf("token refresh failed: %w", err)
 		}
-		
+
 		// Retry the request once
 		return c.doRequest(method, endpoint, body)
 	}
@@ -247,13 +247,13 @@ func (c *Client) GetLocation(vehicleID string) (*Location, error) {
 // StartClimate starts the vehicle's climate control
 func (c *Client) StartClimate(vehicleID string, targetTemp float64) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/climate", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
-		"action":     "start",
-		"hvacType":   1,
+		"action":      "start",
+		"hvacType":    1,
 		"temperature": targetTemp,
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}
@@ -265,11 +265,11 @@ func (c *Client) StartClimate(vehicleID string, targetTemp float64) error {
 // StopClimate stops the vehicle's climate control
 func (c *Client) StopClimate(vehicleID string) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/climate", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
 		"action": "stop",
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}
@@ -281,12 +281,12 @@ func (c *Client) StopClimate(vehicleID string) error {
 // Lock locks the vehicle
 func (c *Client) Lock(vehicleID string) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/door", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
 		"action": "close",
 		"pin":    c.authClient.PIN,
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}
@@ -298,12 +298,12 @@ func (c *Client) Lock(vehicleID string) error {
 // Unlock unlocks the vehicle
 func (c *Client) Unlock(vehicleID string) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/door", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
 		"action": "open",
 		"pin":    c.authClient.PIN,
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}
@@ -315,11 +315,11 @@ func (c *Client) Unlock(vehicleID string) error {
 // StartCharge starts EV charging
 func (c *Client) StartCharge(vehicleID string) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/charge", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
 		"action": "start",
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}
@@ -331,11 +331,11 @@ func (c *Client) StartCharge(vehicleID string) error {
 // StopCharge stops EV charging
 func (c *Client) StopCharge(vehicleID string) error {
 	endpoint := fmt.Sprintf("/api/v1/spa/vehicles/%s/control/charge", vehicleID)
-	
+
 	requestBody := map[string]interface{}{
 		"action": "stop",
 	}
-	
+
 	if deviceID := c.authClient.GetDeviceID(); deviceID != "" {
 		requestBody["deviceId"] = deviceID
 	}

@@ -14,14 +14,14 @@ import (
 type Region string
 
 const (
-	RegionNorthAmerica Region = "na"   // North America (US, Canada)
-	RegionEurope       Region = "eu"   // Europe
-	RegionKorea        Region = "kr"   // South Korea
-	RegionChina        Region = "cn"   // China
-	RegionAustralia    Region = "au"   // Australia
-	RegionJapan        Region = "jp"   // Japan
-	RegionIndia        Region = "in"   // India
-	RegionBrazil       Region = "br"   // Brazil
+	RegionNorthAmerica Region = "na" // North America (US, Canada)
+	RegionEurope       Region = "eu" // Europe
+	RegionKorea        Region = "kr" // South Korea
+	RegionChina        Region = "cn" // China
+	RegionAustralia    Region = "au" // Australia
+	RegionJapan        Region = "jp" // Japan
+	RegionIndia        Region = "in" // India
+	RegionBrazil       Region = "br" // Brazil
 )
 
 // Config contains region-specific configuration
@@ -141,25 +141,25 @@ func ParseRegion(s string) (Region, error) {
 
 	// Try aliases
 	aliases := map[string]Region{
-		"north america":  RegionNorthAmerica,
-		"northamerica":   RegionNorthAmerica,
-		"usa":            RegionNorthAmerica,
-		"us":             RegionNorthAmerica,
-		"canada":         RegionNorthAmerica,
-		"ca":             RegionNorthAmerica,
-		"europe":         RegionEurope,
-		"uk":             RegionEurope,
-		"gb":             RegionEurope,
-		"de":             RegionEurope,
-		"fr":             RegionEurope,
-		"korea":          RegionKorea,
-		"south korea":    RegionKorea,
-		"china":          RegionChina,
-		"australia":      RegionAustralia,
-		"japan":          RegionJapan,
-		"india":          RegionIndia,
-		"brasil":         RegionBrazil,
-		"brazil":         RegionBrazil,
+		"north america": RegionNorthAmerica,
+		"northamerica":  RegionNorthAmerica,
+		"usa":           RegionNorthAmerica,
+		"us":            RegionNorthAmerica,
+		"canada":        RegionNorthAmerica,
+		"ca":            RegionNorthAmerica,
+		"europe":        RegionEurope,
+		"uk":            RegionEurope,
+		"gb":            RegionEurope,
+		"de":            RegionEurope,
+		"fr":            RegionEurope,
+		"korea":         RegionKorea,
+		"south korea":   RegionKorea,
+		"china":         RegionChina,
+		"australia":     RegionAustralia,
+		"japan":         RegionJapan,
+		"india":         RegionIndia,
+		"brasil":        RegionBrazil,
+		"brazil":        RegionBrazil,
 	}
 
 	if region, exists := aliases[s]; exists {

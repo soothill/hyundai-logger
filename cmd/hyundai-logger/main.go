@@ -81,7 +81,7 @@ func main() {
 	fmt.Println("Starting Hyundai Vehicle Logger...")
 	fmt.Printf("Region: %s, Brand: %s\n", cfg.Hyundai.Region, cfg.Hyundai.Brand)
 	fmt.Printf("Poll interval: %v\n", cfg.GetPollInterval())
-	fmt.Printf("Database: %s (org: %s, bucket: %s)\n", 
+	fmt.Printf("Database: %s (org: %s, bucket: %s)\n",
 		cfg.Database.URL, cfg.Database.Organization, cfg.Database.Bucket)
 
 	// Run the logger
@@ -105,10 +105,10 @@ type VehicleLogger struct {
 // Run starts the logging loop
 func (vl *VehicleLogger) Run() {
 	vl.stopChan = make(chan bool)
-	
+
 	// Initial delay to prevent immediate polling on startup
 	time.Sleep(30 * time.Second)
-	
+
 	// Get vehicles once at startup
 	vehicles, err := vl.apiClient.GetVehicles()
 	if err != nil {
@@ -150,7 +150,7 @@ func (vl *VehicleLogger) Run() {
 			if vl.verbose {
 				fmt.Printf("Waiting %v until next poll...\n", interval)
 			}
-			
+
 			select {
 			case <-vl.stopChan:
 				return
@@ -181,14 +181,14 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 		if vl.verbose {
 			fmt.Println("Cached status failed, attempting refresh...")
 		}
-		
+
 		if err := vl.apiClient.RefreshVehicleStatus(vehicle.VehicleID); err != nil {
 			return fmt.Errorf("failed to refresh status: %w", err)
 		}
-		
+
 		// Wait a bit for the refresh to complete
 		time.Sleep(5 * time.Second)
-		
+
 		// Try getting status again
 		status, err = vl.apiClient.GetVehicleStatus(vehicle.VehicleID)
 		if err != nil {
@@ -251,7 +251,7 @@ func (vl *VehicleLogger) shouldUseFastPolling(status *api.VehicleStatus) bool {
 func (vl *VehicleLogger) printStatus(vehicle api.Vehicle, status *api.VehicleStatus) {
 	fmt.Printf("\n=== Vehicle Status: %s ===\n", vehicle.Nickname)
 	fmt.Printf("Last Update: %s\n", status.LastUpdateTime.Format(time.RFC3339))
-	
+
 	// General status
 	fmt.Printf("\nGeneral:\n")
 	fmt.Printf("  Engine: %v\n", status.VehicleStatus.Engine)
@@ -259,14 +259,14 @@ func (vl *VehicleLogger) printStatus(vehicle api.Vehicle, status *api.VehicleSta
 	fmt.Printf("  Fuel Level: %d%%\n", status.VehicleStatus.FuelLevel)
 	fmt.Printf("  12V Battery: %.1fV\n", status.VehicleStatus.BatteryVoltage)
 	fmt.Printf("  Odometer: %d %s\n", status.OdometerStatus.Value, status.OdometerStatus.Unit)
-	
+
 	// Location
 	if status.VehicleLocation.Latitude != 0 || status.VehicleLocation.Longitude != 0 {
 		fmt.Printf("\nLocation:\n")
 		fmt.Printf("  Coordinates: %.6f, %.6f\n", status.VehicleLocation.Latitude, status.VehicleLocation.Longitude)
 		fmt.Printf("  Speed: %.1f km/h\n", status.VehicleLocation.Speed)
 	}
-	
+
 	// EV Status (if applicable)
 	if status.EVStatus != nil {
 		fmt.Printf("\nEV Status:\n")
@@ -279,19 +279,19 @@ func (vl *VehicleLogger) printStatus(vehicle api.Vehicle, status *api.VehicleSta
 		}
 		fmt.Printf("  EV Range: %.1f km\n", status.EVStatus.RangeEV)
 	}
-	
+
 	// Climate
 	fmt.Printf("\nClimate:\n")
 	fmt.Printf("  AC Active: %v\n", status.Climate.Active)
 	fmt.Printf("  Interior Temp: %.1f°C\n", status.Climate.InteriorTemp)
 	fmt.Printf("  Exterior Temp: %.1f°C\n", status.Climate.ExteriorTemp)
-	
+
 	// Doors
 	fmt.Printf("\nDoors:\n")
 	fmt.Printf("  Front Left: %v, Front Right: %v\n", status.DoorStatus.FrontLeft, status.DoorStatus.FrontRight)
 	fmt.Printf("  Rear Left: %v, Rear Right: %v\n", status.DoorStatus.BackLeft, status.DoorStatus.BackRight)
 	fmt.Printf("  Trunk: %v, Hood: %v\n", status.DoorStatus.Trunk, status.DoorStatus.Hood)
-	
+
 	// Tires
 	fmt.Printf("\nTire Pressure:\n")
 	fmt.Printf("  Front: L=%.1f PSI, R=%.1f PSI\n", status.TireStatus.FrontLeftPSI, status.TireStatus.FrontRightPSI)

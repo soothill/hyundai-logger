@@ -24,9 +24,9 @@ func (e *Entry) IsExpired() bool {
 
 // Cache provides a simple in-memory cache with TTL support
 type Cache struct {
-	mu         sync.RWMutex
-	entries    map[string]*Entry
-	defaultTTL time.Duration
+	mu          sync.RWMutex
+	entries     map[string]*Entry
+	defaultTTL  time.Duration
 	stopCleanup chan struct{}
 }
 

@@ -21,27 +21,27 @@ type Vehicle struct {
 
 // VehicleStatus represents the complete vehicle status
 type VehicleStatus struct {
-	VehicleStatus    GeneralStatus    `json:"vehicleStatus"`
-	VehicleLocation  Location         `json:"vehicleLocation"`
-	OdometerStatus   OdometerStatus   `json:"odometer"`
-	EVStatus         *EVStatus        `json:"evStatus,omitempty"`
-	Climate          ClimateStatus    `json:"airCtrlStatus"`
-	DoorStatus       DoorStatus       `json:"doorOpen"`
-	TireStatus       TireStatus       `json:"tirePressure"`
-	LastUpdateTime   time.Time        `json:"lastUpdateTime"`
+	VehicleStatus   GeneralStatus  `json:"vehicleStatus"`
+	VehicleLocation Location       `json:"vehicleLocation"`
+	OdometerStatus  OdometerStatus `json:"odometer"`
+	EVStatus        *EVStatus      `json:"evStatus,omitempty"`
+	Climate         ClimateStatus  `json:"airCtrlStatus"`
+	DoorStatus      DoorStatus     `json:"doorOpen"`
+	TireStatus      TireStatus     `json:"tirePressure"`
+	LastUpdateTime  time.Time      `json:"lastUpdateTime"`
 }
 
 // GeneralStatus represents general vehicle status
 type GeneralStatus struct {
-	Engine           bool    `json:"engine"`
-	Locked           bool    `json:"doorLock"`
-	LowFuelLight     bool    `json:"lowFuelLight"`
-	AirCondition     bool    `json:"airCtrl"`
-	DefrostStatus    string  `json:"defrost"`
-	TrunkOpen        bool    `json:"trunkOpen"`
-	HoodOpen         bool    `json:"hoodOpen"`
-	FuelLevel        int     `json:"fuelLevel"`
-	BatteryVoltage   float64 `json:"battery"`
+	Engine            bool        `json:"engine"`
+	Locked            bool        `json:"doorLock"`
+	LowFuelLight      bool        `json:"lowFuelLight"`
+	AirCondition      bool        `json:"airCtrl"`
+	DefrostStatus     string      `json:"defrost"`
+	TrunkOpen         bool        `json:"trunkOpen"`
+	HoodOpen          bool        `json:"hoodOpen"`
+	FuelLevel         int         `json:"fuelLevel"`
+	BatteryVoltage    float64     `json:"battery"`
 	RemoteStartStatus RemoteStart `json:"remoteStart"`
 }
 
@@ -69,37 +69,37 @@ type OdometerStatus struct {
 
 // EVStatus represents electric vehicle specific status
 type EVStatus struct {
-	BatteryLevel           int     `json:"batteryLevel"`
-	BatteryCapacity        float64 `json:"batteryCapacity"`
-	BatteryCharge          bool    `json:"batteryCharge"`
-	PluggedIn              bool    `json:"batteryPlugin"`
-	ChargingPower          float64 `json:"chargingPower"`
-	EstimatedChargeTime    int     `json:"remainTime"`
-	TargetChargeLevel      int     `json:"targetChargeLevel"`
-	ChargeTargetSOC        int     `json:"chargeTargetSOC"`
-	RangeEV                float64 `json:"drvDistance"`
-	ChargingCurrent        float64 `json:"chargingCurrent"`
-	ChargingVoltage        float64 `json:"chargingVoltage"`
-	ChargeMode             string  `json:"chargeMode"`
-	ChargeStatus           string  `json:"chargeStatus"`
-	EstimatedFullChargeTime int    `json:"estimatedFullChargeTime"`
-	EstimatedPortableTime   int    `json:"estimatedPortableTime"`
-	EstimatedStationTime    int    `json:"estimatedStationTime"`
+	BatteryLevel            int     `json:"batteryLevel"`
+	BatteryCapacity         float64 `json:"batteryCapacity"`
+	BatteryCharge           bool    `json:"batteryCharge"`
+	PluggedIn               bool    `json:"batteryPlugin"`
+	ChargingPower           float64 `json:"chargingPower"`
+	EstimatedChargeTime     int     `json:"remainTime"`
+	TargetChargeLevel       int     `json:"targetChargeLevel"`
+	ChargeTargetSOC         int     `json:"chargeTargetSOC"`
+	RangeEV                 float64 `json:"drvDistance"`
+	ChargingCurrent         float64 `json:"chargingCurrent"`
+	ChargingVoltage         float64 `json:"chargingVoltage"`
+	ChargeMode              string  `json:"chargeMode"`
+	ChargeStatus            string  `json:"chargeStatus"`
+	EstimatedFullChargeTime int     `json:"estimatedFullChargeTime"`
+	EstimatedPortableTime   int     `json:"estimatedPortableTime"`
+	EstimatedStationTime    int     `json:"estimatedStationTime"`
 }
 
 // ClimateStatus represents climate control status
 type ClimateStatus struct {
-	Active          bool    `json:"airCtrl"`
-	InteriorTemp    float64 `json:"airTemp"`
-	ExteriorTemp    float64 `json:"outTemp"`
-	TargetTemp      float64 `json:"airCtrlTempValue"`
-	FanSpeed        int     `json:"airCtrlFanSpeed"`
-	DefrostActive   bool    `json:"defrost"`
-	RearDefrost     bool    `json:"rearBlast"`
-	SteeringWheel   bool    `json:"steerWheelHeat"`
-	SideMirrorHeat  bool    `json:"sideMirrorHeat"`
-	SeatHeatLeft    int     `json:"seatHeatLeft"`
-	SeatHeatRight   int     `json:"seatHeatRight"`
+	Active         bool    `json:"airCtrl"`
+	InteriorTemp   float64 `json:"airTemp"`
+	ExteriorTemp   float64 `json:"outTemp"`
+	TargetTemp     float64 `json:"airCtrlTempValue"`
+	FanSpeed       int     `json:"airCtrlFanSpeed"`
+	DefrostActive  bool    `json:"defrost"`
+	RearDefrost    bool    `json:"rearBlast"`
+	SteeringWheel  bool    `json:"steerWheelHeat"`
+	SideMirrorHeat bool    `json:"sideMirrorHeat"`
+	SeatHeatLeft   int     `json:"seatHeatLeft"`
+	SeatHeatRight  int     `json:"seatHeatRight"`
 }
 
 // DoorStatus represents door and lock status
@@ -114,14 +114,14 @@ type DoorStatus struct {
 
 // TireStatus represents tire pressure information
 type TireStatus struct {
-	FrontLeftPSI  float64 `json:"frontLeftPsi"`
-	FrontRightPSI float64 `json:"frontRightPsi"`
-	RearLeftPSI   float64 `json:"rearLeftPsi"`
-	RearRightPSI  float64 `json:"rearRightPsi"`
-	FrontLeftStatus  string `json:"frontLeftStatus"`
-	FrontRightStatus string `json:"frontRightStatus"`
-	RearLeftStatus   string `json:"rearLeftStatus"`
-	RearRightStatus  string `json:"rearRightStatus"`
+	FrontLeftPSI     float64 `json:"frontLeftPsi"`
+	FrontRightPSI    float64 `json:"frontRightPsi"`
+	RearLeftPSI      float64 `json:"rearLeftPsi"`
+	RearRightPSI     float64 `json:"rearRightPsi"`
+	FrontLeftStatus  string  `json:"frontLeftStatus"`
+	FrontRightStatus string  `json:"frontRightStatus"`
+	RearLeftStatus   string  `json:"rearLeftStatus"`
+	RearRightStatus  string  `json:"rearRightStatus"`
 }
 
 // CommandResponse represents response from control commands

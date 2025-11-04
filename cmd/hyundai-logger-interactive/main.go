@@ -17,7 +17,6 @@ import (
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/config"
 	"github.com/soothill/hyundai-logger/internal/database"
-	"github.com/soothill/hyundai-logger/internal/retry"
 )
 
 const banner = `
@@ -63,9 +62,7 @@ func main() {
 	}
 
 	// Connect to database
-	ctx := context.Background()
-	db, err := database.NewClient(cfg.Database.URL, cfg.Database.Token,
-		cfg.Database.Organization, cfg.Database.Bucket)
+	db, err := database.NewClient(cfg.Database)
 	if err != nil {
 		fmt.Printf("Warning: Database connection failed: %v\n", err)
 		db = nil
@@ -176,54 +173,43 @@ func (cli *InteractiveCLI) showStatus() {
 		fmt.Printf("  Database:            ✗ Not connected\n")
 	}
 
-	state, _, _ := cli.apiClient.GetCircuitBreakerStats()
-	fmt.Printf("  Circuit Breaker:     %s\n", state)
+	fmt.Printf("  API Client:          ✓ Authenticated\n")
 }
 
 func (cli *InteractiveCLI) listVehicles() {
 	fmt.Println("\nFetching vehicles...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Authenticate if needed
-	if err := cli.apiClient.Authenticate(ctx); err != nil {
-		fmt.Printf("Error: Authentication failed: %v\n", err)
-		return
-	}
-
-	vehicles, err := cli.apiClient.GetVehicles(ctx)
+	vehiclesResp, err := cli.apiClient.GetVehicles()
 	if err != nil {
 		fmt.Printf("Error: Failed to fetch vehicles: %v\n", err)
 		return
 	}
 
-	if len(vehicles) == 0 {
+	// Use Vehicles or Result field depending on which is populated
+	vehicleList := vehiclesResp.Vehicles
+	if len(vehicleList) == 0 {
+		vehicleList = vehiclesResp.Result
+	}
+
+	if len(vehicleList) == 0 {
 		fmt.Println("No vehicles found in account.")
 		return
 	}
 
-	fmt.Printf("\nFound %d vehicle(s):\n\n", len(vehicles))
+	fmt.Printf("\nFound %d vehicle(s):\n\n", len(vehicleList))
 
-	for i, vehicle := range vehicles {
-		fmt.Printf("  %d. %s %s %d\n", i+1, vehicle.Make, vehicle.Model, vehicle.Year)
+	for i, vehicle := range vehicleList {
+		fmt.Printf("  %d. %s %s\n", i+1, vehicle.Nickname, vehicle.VehicleModel)
 		fmt.Printf("     VIN:        %s\n", vehicle.VIN)
 		fmt.Printf("     Vehicle ID: %s\n", vehicle.VehicleID)
+		if vehicle.Year != "" {
+			fmt.Printf("     Year:       %s\n", vehicle.Year)
+		}
 		fmt.Println()
 	}
 }
 
 func (cli *InteractiveCLI) pollNow(args []string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	// Authenticate
-	fmt.Println("Authenticating...")
-	if err := cli.apiClient.Authenticate(ctx); err != nil {
-		fmt.Printf("Error: Authentication failed: %v\n", err)
-		return
-	}
-
 	var targetVIN string
 	if len(args) > 0 {
 		targetVIN = args[0]
@@ -235,18 +221,24 @@ func (cli *InteractiveCLI) pollNow(args []string) {
 	start := time.Now()
 
 	// Get vehicles
-	vehicles, err := cli.apiClient.GetVehicles(ctx)
+	vehiclesResp, err := cli.apiClient.GetVehicles()
 	if err != nil {
 		fmt.Printf("Error: Failed to fetch vehicles: %v\n", err)
 		return
 	}
 
+	// Use Vehicles or Result field depending on which is populated
+	vehicleList := vehiclesResp.Vehicles
+	if len(vehicleList) == 0 {
+		vehicleList = vehiclesResp.Result
+	}
+
 	// Filter if VIN specified
 	if targetVIN != "" {
 		found := false
-		for _, v := range vehicles {
+		for _, v := range vehicleList {
 			if v.VIN == targetVIN || v.VehicleID == targetVIN {
-				vehicles = []api.Vehicle{v}
+				vehicleList = []api.Vehicle{v}
 				found = true
 				break
 			}
@@ -258,38 +250,32 @@ func (cli *InteractiveCLI) pollNow(args []string) {
 	}
 
 	// Poll each vehicle
-	for i, vehicle := range vehicles {
+	for i, vehicle := range vehicleList {
 		fmt.Printf("\n[%d/%d] Polling %s %s (%s)...\n",
-			i+1, len(vehicles), vehicle.Make, vehicle.Model, vehicle.VIN)
+			i+1, len(vehicleList), vehicle.Nickname, vehicle.VehicleModel, vehicle.VIN)
 
 		pollStart := time.Now()
 
 		// Get status
-		status, err := cli.apiClient.GetVehicleStatus(ctx, vehicle.VehicleID)
+		status, err := cli.apiClient.GetVehicleStatus(vehicle.VehicleID)
 		if err != nil {
 			fmt.Printf("  ✗ Status: Failed (%v)\n", err)
 		} else {
 			fmt.Printf("  ✓ Status: OK (%s)\n", time.Since(pollStart).Round(time.Millisecond))
-			fmt.Printf("    - Odometer: %.1f km\n", status.Odometer)
-			if status.EV != nil {
-				fmt.Printf("    - Battery: %.1f%%\n", status.EV.BatteryLevel)
-				if status.EV.Charging {
-					fmt.Printf("    - Charging: Yes (%.1f kW)\n", status.EV.ChargingPower)
+			fmt.Printf("    - Odometer: %d %s\n", status.OdometerStatus.Value, status.OdometerStatus.Unit)
+			if status.EVStatus != nil {
+				fmt.Printf("    - Battery: %d%%\n", status.EVStatus.BatteryLevel)
+				if status.EVStatus.BatteryCharge {
+					fmt.Printf("    - Charging: Yes (%.1f kW)\n", status.EVStatus.ChargingPower)
 				} else {
 					fmt.Printf("    - Charging: No\n")
 				}
 			}
-		}
-
-		// Get location
-		pollStart = time.Now()
-		location, err := cli.apiClient.GetVehicleLocation(ctx, vehicle.VehicleID)
-		if err != nil {
-			fmt.Printf("  ✗ Location: Failed (%v)\n", err)
-		} else {
-			fmt.Printf("  ✓ Location: OK (%s)\n", time.Since(pollStart).Round(time.Millisecond))
-			fmt.Printf("    - Lat/Lon: %.6f, %.6f\n",
-				location.Location.Latitude, location.Location.Longitude)
+			// Location is included in status
+			if status.VehicleLocation.Latitude != 0 || status.VehicleLocation.Longitude != 0 {
+				fmt.Printf("    - Location: %.6f, %.6f\n",
+					status.VehicleLocation.Latitude, status.VehicleLocation.Longitude)
+			}
 		}
 	}
 
@@ -307,24 +293,21 @@ func (cli *InteractiveCLI) showVehicle(args []string) {
 	vin := args[0]
 	fmt.Printf("\nFetching detailed information for %s...\n", vin)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Authenticate
-	if err := cli.apiClient.Authenticate(ctx); err != nil {
-		fmt.Printf("Error: Authentication failed: %v\n", err)
-		return
-	}
-
 	// Get vehicles to find the ID
-	vehicles, err := cli.apiClient.GetVehicles(ctx)
+	vehiclesResp, err := cli.apiClient.GetVehicles()
 	if err != nil {
 		fmt.Printf("Error: Failed to fetch vehicles: %v\n", err)
 		return
 	}
 
+	// Use Vehicles or Result field depending on which is populated
+	vehicleList := vehiclesResp.Vehicles
+	if len(vehicleList) == 0 {
+		vehicleList = vehiclesResp.Result
+	}
+
 	var targetVehicle *api.Vehicle
-	for _, v := range vehicles {
+	for _, v := range vehicleList {
 		if v.VIN == vin || v.VehicleID == vin {
 			targetVehicle = &v
 			break
@@ -337,7 +320,7 @@ func (cli *InteractiveCLI) showVehicle(args []string) {
 	}
 
 	// Get status
-	status, err := cli.apiClient.GetVehicleStatus(ctx, targetVehicle.VehicleID)
+	status, err := cli.apiClient.GetVehicleStatus(targetVehicle.VehicleID)
 	if err != nil {
 		fmt.Printf("Error: Failed to get status: %v\n", err)
 		return
@@ -345,30 +328,31 @@ func (cli *InteractiveCLI) showVehicle(args []string) {
 
 	// Display information
 	fmt.Println("\n╔════════════════════════════════════════════════════════════════╗")
-	fmt.Printf("║  %s %s %d\n", targetVehicle.Make, targetVehicle.Model, targetVehicle.Year)
+	fmt.Printf("║  %s %s\n", targetVehicle.Nickname, targetVehicle.VehicleModel)
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 
-	fmt.Printf("\n  VIN:        %s\n", status.VIN)
-	fmt.Printf("  Updated:    %s\n", status.Timestamp.Format("2006-01-02 15:04:05"))
-	fmt.Printf("  Odometer:   %.1f km\n", status.Odometer)
-	fmt.Printf("  Fuel Level: %.1f%%\n", status.FuelLevel)
+	fmt.Printf("\n  VIN:        %s\n", targetVehicle.VIN)
+	fmt.Printf("  Updated:    %s\n", status.LastUpdateTime.Format("2006-01-02 15:04:05"))
+	fmt.Printf("  Odometer:   %d %s\n", status.OdometerStatus.Value, status.OdometerStatus.Unit)
+	fmt.Printf("  Fuel Level: %d%%\n", status.VehicleStatus.FuelLevel)
 
-	if status.Engine.Running {
-		fmt.Printf("  Engine:     Running (Range: %.1f km)\n", status.Engine.RangeKM)
+	if status.VehicleStatus.Engine {
+		fmt.Printf("  Engine:     Running\n")
 	} else {
-		fmt.Printf("  Engine:     Off (Range: %.1f km)\n", status.Engine.RangeKM)
+		fmt.Printf("  Engine:     Off\n")
 	}
 
-	if status.EV != nil {
+	if status.EVStatus != nil {
 		fmt.Println("\n  Electric Vehicle Status:")
-		fmt.Printf("    Battery:     %.1f%%\n", status.EV.BatteryLevel)
-		fmt.Printf("    Range:       %.1f km\n", status.EV.RangeKM)
-		if status.EV.Charging {
+		fmt.Printf("    Battery:     %d%%\n", status.EVStatus.BatteryLevel)
+		fmt.Printf("    Range:       %.1f km\n", status.EVStatus.RangeEV)
+		if status.EVStatus.BatteryCharge {
 			fmt.Printf("    Charging:    Yes\n")
-			fmt.Printf("    Power:       %.1f kW\n", status.EV.ChargingPower)
+			fmt.Printf("    Power:       %.1f kW\n", status.EVStatus.ChargingPower)
 		} else {
 			fmt.Printf("    Charging:    No\n")
 		}
+		fmt.Printf("    Plugged In:  %v\n", status.EVStatus.PluggedIn)
 	}
 }
 
@@ -377,18 +361,13 @@ func (cli *InteractiveCLI) showMetrics() {
 	fmt.Println("║                         Metrics                                ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 
-	state, failures, lastFail := cli.apiClient.GetCircuitBreakerStats()
-
-	fmt.Printf("\n  Circuit Breaker:\n")
-	fmt.Printf("    State:          %s\n", state)
-	fmt.Printf("    Failures:       %d\n", failures)
-	if !lastFail.IsZero() {
-		fmt.Printf("    Last Failure:   %s\n", lastFail.Format("2006-01-02 15:04:05"))
-	}
+	fmt.Printf("\n  API Client:\n")
+	fmt.Printf("    Region:         %s\n", cli.apiClient.Region)
+	fmt.Printf("    Brand:          %s\n", cli.apiClient.Brand)
 
 	fmt.Printf("\n  System:\n")
 	fmt.Printf("    Uptime:         %s\n", time.Since(cli.startTime).Round(time.Second))
-	fmt.Printf("    Config Reloads: N/A (requires logger integration)\n")
+	fmt.Printf("    Poll Interval:  %d minutes\n", cli.config.RateLimit.PollIntervalMinutes)
 }
 
 func (cli *InteractiveCLI) showConfig() {
@@ -404,8 +383,16 @@ func (cli *InteractiveCLI) showConfig() {
 	fmt.Printf("\n  Rate Limiting:\n")
 	fmt.Printf("    Poll Interval:   %d minutes\n", cli.config.RateLimit.PollIntervalMinutes)
 	fmt.Printf("    Requests/Hour:   %d\n", cli.config.RateLimit.RequestsPerHour)
-	fmt.Printf("    Schedule:        %v\n", cli.config.RateLimit.Schedule.Enabled)
-	fmt.Printf("    Charging Detect: %v\n", cli.config.RateLimit.ChargingConfig.Enabled)
+	if len(cli.config.RateLimit.Periods) > 0 {
+		fmt.Printf("    Time Periods:    %d configured\n", len(cli.config.RateLimit.Periods))
+	}
+
+	fmt.Printf("\n  Charging Mode:\n")
+	fmt.Printf("    Enabled:         %v\n", cli.config.ChargingMode.Enabled)
+	if cli.config.ChargingMode.Enabled {
+		fmt.Printf("    Interval:        %d minutes\n", cli.config.ChargingMode.IntervalMinutes)
+		fmt.Printf("    Fast Interval:   %d minutes\n", cli.config.ChargingMode.FastChargeIntervalMinutes)
+	}
 
 	fmt.Printf("\n  Database:\n")
 	fmt.Printf("    URL:      %s\n", cli.config.Database.URL)
@@ -414,40 +401,19 @@ func (cli *InteractiveCLI) showConfig() {
 
 	fmt.Printf("\n  Alerts:\n")
 	fmt.Printf("    Email:    %v\n", cli.config.Alerts.Enabled)
-	fmt.Printf("    Webhooks: %v\n", cli.config.Webhooks.Enabled)
 }
 
 func (cli *InteractiveCLI) showCircuitBreaker() {
-	state, failures, lastFail := cli.apiClient.GetCircuitBreakerStats()
-
 	fmt.Println("\n╔════════════════════════════════════════════════════════════════╗")
 	fmt.Println("║                    Circuit Breaker Status                      ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
 
-	statusIcon := "✓"
-	if state.String() != "closed" {
-		statusIcon = "⚠"
-	}
-
-	fmt.Printf("\n  %s State:        %s\n", statusIcon, state)
-	fmt.Printf("    Failures:     %d\n", failures)
-
-	if !lastFail.IsZero() {
-		fmt.Printf("    Last Failure: %s (%s ago)\n",
-			lastFail.Format("2006-01-02 15:04:05"),
-			time.Since(lastFail).Round(time.Second))
-	} else {
-		fmt.Printf("    Last Failure: Never\n")
-	}
-
-	if state.String() == "open" {
-		fmt.Println("\n  ⚠ Circuit is OPEN - API calls are being blocked")
-		fmt.Println("    The circuit will attempt to close automatically")
-	} else if state.String() == "half-open" {
-		fmt.Println("\n  ⚠ Circuit is HALF-OPEN - Testing if service recovered")
-	} else {
-		fmt.Println("\n  ✓ Circuit is CLOSED - Operating normally")
-	}
+	fmt.Println("\n  Note: Circuit breaker functionality has been removed in the refactored code.")
+	fmt.Println("  The API client now uses simpler error handling with retries.")
+	fmt.Printf("\n  API Client Status:\n")
+	fmt.Printf("    Region:       %s\n", cli.apiClient.Region)
+	fmt.Printf("    Brand:        %s\n", cli.apiClient.Brand)
+	fmt.Printf("    Initialized:  ✓\n")
 }
 
 func (cli *InteractiveCLI) testConnection(args []string) {
@@ -479,25 +445,21 @@ func (cli *InteractiveCLI) testAPI(ctx context.Context) {
 	fmt.Println("Testing API connection...")
 
 	start := time.Now()
-
-	if err := cli.apiClient.Authenticate(ctx); err != nil {
-		fmt.Printf("  ✗ Authentication: FAILED (%v)\n", err)
-		return
-	}
-
-	authTime := time.Since(start)
-	fmt.Printf("  ✓ Authentication: OK (%s)\n", authTime.Round(time.Millisecond))
-
-	start = time.Now()
-	vehicles, err := cli.apiClient.GetVehicles(ctx)
+	vehiclesResp, err := cli.apiClient.GetVehicles()
 	if err != nil {
 		fmt.Printf("  ✗ Fetch Vehicles: FAILED (%v)\n", err)
 		return
 	}
 
+	// Use Vehicles or Result field depending on which is populated
+	vehicleList := vehiclesResp.Vehicles
+	if len(vehicleList) == 0 {
+		vehicleList = vehiclesResp.Result
+	}
+
 	vehicleTime := time.Since(start)
 	fmt.Printf("  ✓ Fetch Vehicles: OK (%d vehicles in %s)\n",
-		len(vehicles), vehicleTime.Round(time.Millisecond))
+		len(vehicleList), vehicleTime.Round(time.Millisecond))
 }
 
 func (cli *InteractiveCLI) testDatabase(ctx context.Context) {

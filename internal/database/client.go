@@ -66,6 +66,24 @@ func (c *Client) Close() {
 	}
 }
 
+// HealthCheck checks if the database is accessible
+func (c *Client) HealthCheck(ctx context.Context) error {
+	health, err := c.client.Health(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check InfluxDB health: %w", err)
+	}
+
+	if health.Status != "pass" {
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		return fmt.Errorf("InfluxDB health check failed: %s", msg)
+	}
+
+	return nil
+}
+
 // InitializeSchema ensures the bucket exists with proper retention
 func (c *Client) InitializeSchema() error {
 	bucketsAPI := c.client.BucketsAPI()
@@ -104,11 +122,11 @@ func (c *Client) InitializeSchema() error {
 func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStatus) error {
 	timestamp := time.Now()
 	tags := map[string]string{
-		"vin":         vehicle.VIN,
-		"vehicle_id":  vehicle.VehicleID,
-		"nickname":    vehicle.Nickname,
-		"model":       vehicle.VehicleModel,
-		"year":        vehicle.Year,
+		"vin":        vehicle.VIN,
+		"vehicle_id": vehicle.VehicleID,
+		"nickname":   vehicle.Nickname,
+		"model":      vehicle.VehicleModel,
+		"year":       vehicle.Year,
 	}
 
 	// Write vehicle metadata
@@ -125,16 +143,16 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 	p = influxdb2.NewPoint("vehicle_status",
 		tags,
 		map[string]interface{}{
-			"engine":            status.VehicleStatus.Engine,
-			"locked":            status.VehicleStatus.Locked,
-			"fuel_level":        status.VehicleStatus.FuelLevel,
-			"low_fuel_light":    status.VehicleStatus.LowFuelLight,
-			"battery_voltage":   status.VehicleStatus.BatteryVoltage,
-			"air_condition":     status.VehicleStatus.AirCondition,
-			"defrost":           status.VehicleStatus.DefrostStatus,
-			"trunk_open":        status.VehicleStatus.TrunkOpen,
-			"hood_open":         status.VehicleStatus.HoodOpen,
-			"remote_start":      status.VehicleStatus.RemoteStartStatus.RemoteStartActive,
+			"engine":          status.VehicleStatus.Engine,
+			"locked":          status.VehicleStatus.Locked,
+			"fuel_level":      status.VehicleStatus.FuelLevel,
+			"low_fuel_light":  status.VehicleStatus.LowFuelLight,
+			"battery_voltage": status.VehicleStatus.BatteryVoltage,
+			"air_condition":   status.VehicleStatus.AirCondition,
+			"defrost":         status.VehicleStatus.DefrostStatus,
+			"trunk_open":      status.VehicleStatus.TrunkOpen,
+			"hood_open":       status.VehicleStatus.HoodOpen,
+			"remote_start":    status.VehicleStatus.RemoteStartStatus.RemoteStartActive,
 		},
 		timestamp)
 	c.writeAPI.WritePoint(p)
@@ -169,20 +187,20 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 		p = influxdb2.NewPoint("vehicle_ev",
 			tags,
 			map[string]interface{}{
-				"battery_level":            status.EVStatus.BatteryLevel,
-				"battery_capacity":         status.EVStatus.BatteryCapacity,
-				"charging":                 status.EVStatus.BatteryCharge,
-				"plugged_in":               status.EVStatus.PluggedIn,
-				"charging_power":           status.EVStatus.ChargingPower,
-				"estimated_charge_time":    status.EVStatus.EstimatedChargeTime,
-				"target_charge_level":      status.EVStatus.TargetChargeLevel,
-				"range_ev_km":              status.EVStatus.RangeEV,
-				"range_ev_miles":           status.EVStatus.RangeEV * 0.621371,
-				"charging_current":         status.EVStatus.ChargingCurrent,
-				"charging_voltage":         status.EVStatus.ChargingVoltage,
-				"charge_mode":              status.EVStatus.ChargeMode,
-				"charge_status":            status.EVStatus.ChargeStatus,
-				"estimated_full_time":      status.EVStatus.EstimatedFullChargeTime,
+				"battery_level":         status.EVStatus.BatteryLevel,
+				"battery_capacity":      status.EVStatus.BatteryCapacity,
+				"charging":              status.EVStatus.BatteryCharge,
+				"plugged_in":            status.EVStatus.PluggedIn,
+				"charging_power":        status.EVStatus.ChargingPower,
+				"estimated_charge_time": status.EVStatus.EstimatedChargeTime,
+				"target_charge_level":   status.EVStatus.TargetChargeLevel,
+				"range_ev_km":           status.EVStatus.RangeEV,
+				"range_ev_miles":        status.EVStatus.RangeEV * 0.621371,
+				"charging_current":      status.EVStatus.ChargingCurrent,
+				"charging_voltage":      status.EVStatus.ChargingVoltage,
+				"charge_mode":           status.EVStatus.ChargeMode,
+				"charge_status":         status.EVStatus.ChargeStatus,
+				"estimated_full_time":   status.EVStatus.EstimatedFullChargeTime,
 			},
 			timestamp)
 		c.writeAPI.WritePoint(p)
@@ -225,14 +243,14 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 	p = influxdb2.NewPoint("vehicle_tires",
 		tags,
 		map[string]interface{}{
-			"front_left_psi":      status.TireStatus.FrontLeftPSI,
-			"front_right_psi":     status.TireStatus.FrontRightPSI,
-			"rear_left_psi":       status.TireStatus.RearLeftPSI,
-			"rear_right_psi":      status.TireStatus.RearRightPSI,
-			"front_left_status":   status.TireStatus.FrontLeftStatus,
-			"front_right_status":  status.TireStatus.FrontRightStatus,
-			"rear_left_status":    status.TireStatus.RearLeftStatus,
-			"rear_right_status":   status.TireStatus.RearRightStatus,
+			"front_left_psi":     status.TireStatus.FrontLeftPSI,
+			"front_right_psi":    status.TireStatus.FrontRightPSI,
+			"rear_left_psi":      status.TireStatus.RearLeftPSI,
+			"rear_right_psi":     status.TireStatus.RearRightPSI,
+			"front_left_status":  status.TireStatus.FrontLeftStatus,
+			"front_right_status": status.TireStatus.FrontRightStatus,
+			"rear_left_status":   status.TireStatus.RearLeftStatus,
+			"rear_right_status":  status.TireStatus.RearRightStatus,
 		},
 		timestamp)
 	c.writeAPI.WritePoint(p)
@@ -246,7 +264,7 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 // QueryLatestStatus queries the latest vehicle status from the database
 func (c *Client) QueryLatestStatus(vin string) (map[string]interface{}, error) {
 	queryAPI := c.client.QueryAPI(c.org)
-	
+
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 			|> range(start: -1h)

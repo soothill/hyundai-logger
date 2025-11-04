@@ -16,7 +16,7 @@ type ChargingPhase string
 
 const (
 	PhaseNotCharging  ChargingPhase = "not_charging"
-	PhaseFastCharge   ChargingPhase = "fast_charge"  // >50 kW
+	PhaseFastCharge   ChargingPhase = "fast_charge"   // >50 kW
 	PhaseNormalCharge ChargingPhase = "normal_charge" // 7-50 kW
 	PhaseTrickle      ChargingPhase = "trickle"       // <7 kW or >95% battery
 	PhaseComplete     ChargingPhase = "complete"      // 100% battery
@@ -165,11 +165,11 @@ func (o *Optimizer) GetPhaseDescription(phase ChargingPhase) string {
 
 // Stats holds statistics about charging detection
 type Stats struct {
-	CurrentPhase    ChargingPhase
-	BatteryLevel    float64
-	ChargingPower   float64
-	IsCharging      bool
-	Interval        time.Duration
+	CurrentPhase     ChargingPhase
+	BatteryLevel     float64
+	ChargingPower    float64
+	IsCharging       bool
+	Interval         time.Duration
 	PhaseDescription string
 }
 

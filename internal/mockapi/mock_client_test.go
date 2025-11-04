@@ -46,8 +46,8 @@ func TestNewMockClient(t *testing.T) {
 	}
 
 	// Verify vehicle data
-	if client.vehicles[0].Make != "Hyundai" {
-		t.Errorf("expected make Hyundai, got %s", client.vehicles[0].Make)
+	if client.vehicles[0].VehicleModel == "" {
+		t.Error("expected non-empty VehicleModel")
 	}
 
 	if client.vehicles[0].VIN == "" {
@@ -129,7 +129,7 @@ func TestGetVehicles(t *testing.T) {
 		t.Error("expected non-empty vehicle ID")
 	}
 
-	if vehicles[0].Model == "" {
+	if vehicles[0].VehicleModel == "" {
 		t.Error("expected non-empty model")
 	}
 }
@@ -157,24 +157,20 @@ func TestGetVehicleStatus(t *testing.T) {
 	}
 
 	// Verify status
-	if status.VIN == "" {
-		t.Error("expected non-empty VIN")
-	}
-
-	if status.EV == nil {
+	if status.EVStatus == nil {
 		t.Fatal("expected EV status, got nil")
 	}
 
-	if status.EV.BatteryLevel != 80.0 {
-		t.Errorf("expected battery 80%%, got %f%%", status.EV.BatteryLevel)
+	if status.EVStatus.BatteryLevel != 80 {
+		t.Errorf("expected battery 80%%, got %d%%", status.EVStatus.BatteryLevel)
 	}
 
-	if status.Odometer != 10000.0 {
-		t.Errorf("expected odometer 10000, got %f", status.Odometer)
+	if status.OdometerStatus.Value != 10000 {
+		t.Errorf("expected odometer 10000, got %d", status.OdometerStatus.Value)
 	}
 
-	if status.Location == nil {
-		t.Error("expected location, got nil")
+	if status.VehicleLocation.Latitude == 0 && status.VehicleLocation.Longitude == 0 {
+		t.Error("expected valid location coordinates")
 	}
 }
 
@@ -195,7 +191,7 @@ func TestGetVehicleStatusInvalidID(t *testing.T) {
 func TestChargingSimulation(t *testing.T) {
 	config := DefaultMockConfig()
 	config.InitialBattery = 50.0
-	config.ChargingPowerKW = 100.0 // Fast charging
+	config.ChargingPowerKW = 5000.0 // Very fast charging for test (unrealistic but makes test fast)
 	config.BatteryCapacityKWh = 64.0
 	config.RandomEvents = false // Disable random events
 
@@ -214,25 +210,26 @@ func TestChargingSimulation(t *testing.T) {
 
 	// Get initial status
 	status1, _ := client.GetVehicleStatus(ctx, vehicleID)
-	initialBattery := status1.EV.BatteryLevel
+	initialBattery := status1.EVStatus.BatteryLevel
 
-	// Wait a bit for charging simulation
-	time.Sleep(100 * time.Millisecond)
+	// Wait for charging simulation
+	// At 5000kW: charges ~1% per 460ms, so 1 second gives ~2% increase
+	time.Sleep(1 * time.Second)
 
 	// Get updated status
 	status2, _ := client.GetVehicleStatus(ctx, vehicleID)
-	newBattery := status2.EV.BatteryLevel
+	newBattery := status2.EVStatus.BatteryLevel
 
 	// Battery should have increased
 	if newBattery <= initialBattery {
-		t.Errorf("expected battery to increase, got %f -> %f", initialBattery, newBattery)
+		t.Errorf("expected battery to increase, got %d -> %d", initialBattery, newBattery)
 	}
 
-	if !status2.EV.Charging {
+	if !status2.EVStatus.BatteryCharge {
 		t.Error("expected charging to be true")
 	}
 
-	if status2.EV.ChargingPower <= 0 {
+	if status2.EVStatus.ChargingPower <= 0 {
 		t.Error("expected positive charging power")
 	}
 }
@@ -241,7 +238,7 @@ func TestDrivingSimulation(t *testing.T) {
 	config := DefaultMockConfig()
 	config.InitialBattery = 80.0
 	config.InitialOdometer = 10000.0
-	config.DrivingSpeedKmh = 100.0 // Fast driving for faster test
+	config.DrivingSpeedKmh = 7200.0 // Very fast for test (7200 km/h = 2 km/s)
 	config.DrivingEnabled = true
 	config.RandomEvents = false
 
@@ -260,28 +257,29 @@ func TestDrivingSimulation(t *testing.T) {
 
 	// Get initial status
 	status1, _ := client.GetVehicleStatus(ctx, vehicleID)
-	initialOdometer := status1.Odometer
-	initialBattery := status1.EV.BatteryLevel
+	initialOdometer := status1.OdometerStatus.Value
+	initialBattery := status1.EVStatus.BatteryLevel
 
 	// Wait for driving simulation
-	time.Sleep(100 * time.Millisecond)
+	// At 7200 km/h (2 km/s), 1 second = 2 km traveled
+	time.Sleep(1 * time.Second)
 
 	// Get updated status
 	status2, _ := client.GetVehicleStatus(ctx, vehicleID)
-	newOdometer := status2.Odometer
-	newBattery := status2.EV.BatteryLevel
+	newOdometer := status2.OdometerStatus.Value
+	newBattery := status2.EVStatus.BatteryLevel
 
 	// Odometer should have increased
 	if newOdometer <= initialOdometer {
-		t.Errorf("expected odometer to increase, got %f -> %f", initialOdometer, newOdometer)
+		t.Errorf("expected odometer to increase, got %d -> %d", initialOdometer, newOdometer)
 	}
 
 	// Battery should have decreased
 	if newBattery >= initialBattery {
-		t.Errorf("expected battery to decrease, got %f -> %f", initialBattery, newBattery)
+		t.Errorf("expected battery to decrease, got %d -> %d", initialBattery, newBattery)
 	}
 
-	if status2.EV.Charging {
+	if status2.EVStatus.BatteryCharge {
 		t.Error("expected charging to be false")
 	}
 }
@@ -463,12 +461,12 @@ func TestBatteryFullStopsCharging(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		status, _ := client.GetVehicleStatus(ctx, vehicleID)
 
-		if status.EV.BatteryLevel >= 100.0 {
+		if status.EVStatus.BatteryLevel >= 100 {
 			// Should stop charging at 100%
 			time.Sleep(100 * time.Millisecond)
 			status2, _ := client.GetVehicleStatus(ctx, vehicleID)
 
-			if status2.EV.Charging {
+			if status2.EVStatus.BatteryCharge {
 				t.Error("charging should stop at 100%")
 			}
 			return

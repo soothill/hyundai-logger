@@ -16,15 +16,15 @@ import (
 
 // MockClient simulates a Hyundai Bluelink API client for development
 type MockClient struct {
-	config         MockConfig
-	authenticated  bool
-	vehicles       []api.Vehicle
-	lastPollTime   time.Time
-	batteryLevel   float64
-	odometer       float64
-	charging       bool
-	chargingPower  float64
-	location       api.Location
+	config        MockConfig
+	authenticated bool
+	vehicles      []api.Vehicle
+	lastPollTime  time.Time
+	batteryLevel  float64
+	odometer      float64
+	charging      bool
+	chargingPower float64
+	location      api.Location
 }
 
 // MockConfig configures the mock client behavior

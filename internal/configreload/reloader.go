@@ -27,14 +27,14 @@ type Logger interface {
 
 // Reloader watches configuration file and triggers reloads
 type Reloader struct {
-	configPath  string
+	configPath    string
 	currentConfig *config.Config
-	mu          sync.RWMutex
-	watcher     *fsnotify.Watcher
-	logger      Logger
-	reloadFuncs []ReloadFunc
-	debounce    time.Duration
-	lastReload  time.Time
+	mu            sync.RWMutex
+	watcher       *fsnotify.Watcher
+	logger        Logger
+	reloadFuncs   []ReloadFunc
+	debounce      time.Duration
+	lastReload    time.Time
 }
 
 // Config holds reloader configuration
@@ -185,25 +185,25 @@ func (r *Reloader) logConfigChanges(old, new *config.Config) {
 			new.RateLimit.RequestsPerHour)
 	}
 
-// DISABLED: 	// Log schedule changes
-// DISABLED: 	if old.RateLimit.Schedule.Enabled != new.RateLimit.Schedule.Enabled {
-// DISABLED: 		r.logger.Info("  Time-based schedule: %v → %v",
-// DISABLED: 			old.RateLimit.Schedule.Enabled,
-// DISABLED: 			new.RateLimit.Schedule.Enabled)
-// DISABLED: 	}
-// DISABLED: 
-// DISABLED: 	// Log charging config changes
-// DISABLED: 	if old.RateLimit.ChargingConfig.Enabled != new.RateLimit.ChargingConfig.Enabled {
-// DISABLED: 		r.logger.Info("  Charging detection: %v → %v",
-// DISABLED: 			old.RateLimit.ChargingConfig.Enabled,
-// DISABLED: 			new.RateLimit.ChargingConfig.Enabled)
-// DISABLED: 	}
-// DISABLED: 
-// DISABLED: 	if old.RateLimit.ChargingConfig.IntervalMinutes != new.RateLimit.ChargingConfig.IntervalMinutes {
-// DISABLED: 		r.logger.Info("  Charging interval: %dm → %dm",
-// DISABLED: 			old.RateLimit.ChargingConfig.IntervalMinutes,
-// DISABLED: 			new.RateLimit.ChargingConfig.IntervalMinutes)
-// DISABLED: 	}
+	// DISABLED: 	// Log schedule changes
+	// DISABLED: 	if old.RateLimit.Schedule.Enabled != new.RateLimit.Schedule.Enabled {
+	// DISABLED: 		r.logger.Info("  Time-based schedule: %v → %v",
+	// DISABLED: 			old.RateLimit.Schedule.Enabled,
+	// DISABLED: 			new.RateLimit.Schedule.Enabled)
+	// DISABLED: 	}
+	// DISABLED:
+	// DISABLED: 	// Log charging config changes
+	// DISABLED: 	if old.RateLimit.ChargingConfig.Enabled != new.RateLimit.ChargingConfig.Enabled {
+	// DISABLED: 		r.logger.Info("  Charging detection: %v → %v",
+	// DISABLED: 			old.RateLimit.ChargingConfig.Enabled,
+	// DISABLED: 			new.RateLimit.ChargingConfig.Enabled)
+	// DISABLED: 	}
+	// DISABLED:
+	// DISABLED: 	if old.RateLimit.ChargingConfig.IntervalMinutes != new.RateLimit.ChargingConfig.IntervalMinutes {
+	// DISABLED: 		r.logger.Info("  Charging interval: %dm → %dm",
+	// DISABLED: 			old.RateLimit.ChargingConfig.IntervalMinutes,
+	// DISABLED: 			new.RateLimit.ChargingConfig.IntervalMinutes)
+	// DISABLED: 	}
 
 	// Log alert changes
 	if old.Alerts.Enabled != new.Alerts.Enabled {

@@ -145,14 +145,19 @@ docker-logs:
 
 docker-build-multiarch:
 	@echo "Building multi-architecture Docker image..."
+	@echo "Note: Multi-arch builds cannot be loaded locally. Use 'make docker-push' to push to registry."
+	@echo "Or use 'make docker-build' for local single-architecture build."
+	@echo ""
 	@echo "Checking for Docker buildx..."
 	@if command -v docker >/dev/null 2>&1 && docker buildx version >/dev/null 2>&1; then \
 		echo "Using Docker buildx for multi-arch build..."; \
 		docker buildx create --name multiarch --use 2>/dev/null || docker buildx use multiarch; \
 		docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 \
-			-t $(DOCKER_IMAGE) \
-			--load .; \
-		echo "✓ Multi-architecture image built successfully"; \
+			-t $(DOCKER_REPO):latest \
+			-t $(DOCKER_REPO):$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev") \
+			.; \
+		echo "✓ Multi-architecture image built and cached successfully"; \
+		echo "To push to registry, run: make docker-push"; \
 	else \
 		echo "❌ Error: Docker buildx not available"; \
 		echo "Please enable Docker buildx or use 'make docker-build' for single architecture"; \

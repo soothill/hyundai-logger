@@ -89,9 +89,9 @@ func (p *ByteSlicePool) Put(slice []byte) {
 
 // JSONBufferPool is specialized for JSON encoding/decoding
 type JSONBufferPool struct {
-	small *BufferPool  // For small JSON (< 1KB)
+	small  *BufferPool // For small JSON (< 1KB)
 	medium *BufferPool // For medium JSON (1KB - 64KB)
-	large *BufferPool  // For large JSON (> 64KB)
+	large  *BufferPool // For large JSON (> 64KB)
 }
 
 // NewJSONBufferPool creates a new JSON buffer pool

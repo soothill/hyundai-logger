@@ -13,32 +13,32 @@ import (
 
 func TestTracker_RecordError(t *testing.T) {
 	tests := []struct {
-		name           string
-		threshold      int
-		errorCount     int
-		expectAlert    bool
-		expectAlertOn  int // Which error number should trigger alert
+		name          string
+		threshold     int
+		errorCount    int
+		expectAlert   bool
+		expectAlertOn int // Which error number should trigger alert
 	}{
 		{
-			name:           "no alert below threshold",
-			threshold:      3,
-			errorCount:     2,
-			expectAlert:    false,
-			expectAlertOn:  0,
+			name:          "no alert below threshold",
+			threshold:     3,
+			errorCount:    2,
+			expectAlert:   false,
+			expectAlertOn: 0,
 		},
 		{
-			name:           "alert at threshold",
-			threshold:      3,
-			errorCount:     3,
-			expectAlert:    true,
-			expectAlertOn:  3,
+			name:          "alert at threshold",
+			threshold:     3,
+			errorCount:    3,
+			expectAlert:   true,
+			expectAlertOn: 3,
 		},
 		{
-			name:           "alert only once",
-			threshold:      2,
-			errorCount:     5,
-			expectAlert:    true,
-			expectAlertOn:  2,
+			name:          "alert only once",
+			threshold:     2,
+			errorCount:    5,
+			expectAlert:   true,
+			expectAlertOn: 2,
 		},
 	}
 

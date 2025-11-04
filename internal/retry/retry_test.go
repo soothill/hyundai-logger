@@ -305,8 +305,8 @@ func TestCalculateDelay(t *testing.T) {
 	retrier := New(config)
 
 	tests := []struct {
-		attempt      int
-		expectedMs   int
+		attempt    int
+		expectedMs int
 	}{
 		{attempt: 1, expectedMs: 100},  // 100 * 2^0 = 100
 		{attempt: 2, expectedMs: 200},  // 100 * 2^1 = 200

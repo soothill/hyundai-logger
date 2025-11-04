@@ -308,10 +308,10 @@ func TestGetKeyByName(t *testing.T) {
 
 func TestHasScope(t *testing.T) {
 	tests := []struct {
-		name         string
-		keyScopes    []string
-		checkScope   string
-		expectedHas  bool
+		name        string
+		keyScopes   []string
+		checkScope  string
+		expectedHas bool
 	}{
 		{"exact match", []string{ScopeReadVehicles}, ScopeReadVehicles, true},
 		{"no match", []string{ScopeReadVehicles}, ScopeWriteVehicles, false},

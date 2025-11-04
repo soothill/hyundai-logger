@@ -16,38 +16,38 @@ type Collector struct {
 	mu sync.RWMutex
 
 	// Poll metrics
-	TotalPolls         int64
-	SuccessfulPolls    int64
-	FailedPolls        int64
-	LastPollDuration   time.Duration
+	TotalPolls          int64
+	SuccessfulPolls     int64
+	FailedPolls         int64
+	LastPollDuration    time.Duration
 	AveragePollDuration time.Duration
-	totalPollDuration  time.Duration
+	totalPollDuration   time.Duration
 
 	// Vehicle metrics
-	TotalVehicles      int
+	TotalVehicles       int
 	VehiclesPollSuccess map[string]int64 // VIN -> success count
 	VehiclesPollFailed  map[string]int64 // VIN -> failure count
 
 	// API metrics
-	APICallsTotal      int64
-	APICallsSuccess    int64
-	APICallsFailed     int64
-	LastAPICallTime    time.Time
-	AverageAPILatency  time.Duration
-	totalAPILatency    time.Duration
+	APICallsTotal     int64
+	APICallsSuccess   int64
+	APICallsFailed    int64
+	LastAPICallTime   time.Time
+	AverageAPILatency time.Duration
+	totalAPILatency   time.Duration
 
 	// Error metrics
-	ConsecutiveErrors  int64
-	TotalErrors        int64
-	LastError          string
-	LastErrorTime      time.Time
+	ConsecutiveErrors int64
+	TotalErrors       int64
+	LastError         string
+	LastErrorTime     time.Time
 
 	// Charging metrics
 	ChargingDetections int64
 	VehiclesCharging   int
 
 	// Start time
-	StartTime          time.Time
+	StartTime time.Time
 }
 
 // New creates a new metrics collector
@@ -55,7 +55,7 @@ func New() *Collector {
 	return &Collector{
 		VehiclesPollSuccess: make(map[string]int64),
 		VehiclesPollFailed:  make(map[string]int64),
-		StartTime:          time.Now(),
+		StartTime:           time.Now(),
 	}
 }
 

@@ -71,7 +71,7 @@ func GetRegionConfig(region, brand string) *OAuth2Config {
 			return brandConfig
 		}
 	}
-	
+
 	// Default to EU Hyundai if not found
 	return configs["EU"]["hyundai"]
 }
@@ -131,14 +131,14 @@ func LoadTokens() (*TokenStore, error) {
 
 // OAuth2Client handles the OAuth2 authentication flow
 type OAuth2Client struct {
-	Config       *OAuth2Config
-	TokenStore   *TokenStore
-	Region       string
-	Brand        string
-	Username     string
-	Password     string
-	PIN          string
-	httpClient   *http.Client
+	Config     *OAuth2Config
+	TokenStore *TokenStore
+	Region     string
+	Brand      string
+	Username   string
+	Password   string
+	PIN        string
+	httpClient *http.Client
 }
 
 // NewOAuth2Client creates a new OAuth2 client
@@ -177,7 +177,7 @@ func (c *OAuth2Client) RefreshAccessToken(refreshToken string) error {
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
 	data.Set("client_id", c.Config.ClientID)
-	
+
 	if c.Config.ClientSecret != "" {
 		data.Set("client_secret", c.Config.ClientSecret)
 	}
@@ -220,7 +220,7 @@ func (c *OAuth2Client) RefreshAccessToken(refreshToken string) error {
 	if c.TokenStore == nil {
 		c.TokenStore = &TokenStore{}
 	}
-	
+
 	c.TokenStore.AccessToken = tokenResp.AccessToken
 	if tokenResp.RefreshToken != "" {
 		c.TokenStore.RefreshToken = tokenResp.RefreshToken

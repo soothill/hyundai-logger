@@ -42,34 +42,34 @@ type VehicleStats struct {
 
 // TripSummary contains information about a single trip
 type TripSummary struct {
-	StartTime   time.Time `json:"start_time"`
-	EndTime     time.Time `json:"end_time"`
-	Distance    float64   `json:"distance_km"`
-	Duration    string    `json:"duration"`
-	StartOdometer float64 `json:"start_odometer_km"`
-	EndOdometer   float64 `json:"end_odometer_km"`
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	Distance      float64   `json:"distance_km"`
+	Duration      string    `json:"duration"`
+	StartOdometer float64   `json:"start_odometer_km"`
+	EndOdometer   float64   `json:"end_odometer_km"`
 }
 
 // ChargingSession contains information about a charging session
 type ChargingSession struct {
-	StartTime     time.Time `json:"start_time"`
-	EndTime       time.Time `json:"end_time"`
-	Duration      string    `json:"duration"`
-	EnergyAdded   float64   `json:"energy_added_kwh"`
-	Cost          float64   `json:"cost,omitempty"`
-	StartBattery  float64   `json:"start_battery_percent"`
-	EndBattery    float64   `json:"end_battery_percent"`
-	PeakPower     float64   `json:"peak_power_kw"`
-	AveragePower  float64   `json:"average_power_kw"`
+	StartTime    time.Time `json:"start_time"`
+	EndTime      time.Time `json:"end_time"`
+	Duration     string    `json:"duration"`
+	EnergyAdded  float64   `json:"energy_added_kwh"`
+	Cost         float64   `json:"cost,omitempty"`
+	StartBattery float64   `json:"start_battery_percent"`
+	EndBattery   float64   `json:"end_battery_percent"`
+	PeakPower    float64   `json:"peak_power_kw"`
+	AveragePower float64   `json:"average_power_kw"`
 }
 
 // Reporter generates various reports from historical data
 type Reporter struct {
-	exporter     *Exporter
-	queryAPI     api.QueryAPI
-	bucket       string
-	org          string
-	costPerKWh   float64
+	exporter   *Exporter
+	queryAPI   api.QueryAPI
+	bucket     string
+	org        string
+	costPerKWh float64
 }
 
 // NewReporter creates a new report generator

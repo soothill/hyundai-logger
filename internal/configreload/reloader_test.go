@@ -135,6 +135,29 @@ webhooks:
 `
 
 func TestNew(t *testing.T) {
+	// Clear environment variables that might interfere
+	oldEnvVars := map[string]string{
+		"HYUNDAI_USERNAME": os.Getenv("HYUNDAI_USERNAME"),
+		"HYUNDAI_PASSWORD": os.Getenv("HYUNDAI_PASSWORD"),
+		"INFLUXDB_URL":     os.Getenv("INFLUXDB_URL"),
+		"INFLUXDB_TOKEN":   os.Getenv("INFLUXDB_TOKEN"),
+		"INFLUXDB_ORG":     os.Getenv("INFLUXDB_ORG"),
+		"INFLUXDB_BUCKET":  os.Getenv("INFLUXDB_BUCKET"),
+	}
+	defer func() {
+		for k, v := range oldEnvVars {
+			if v != "" {
+				os.Setenv(k, v)
+			} else {
+				os.Unsetenv(k)
+			}
+		}
+	}()
+
+	for k := range oldEnvVars {
+		os.Unsetenv(k)
+	}
+
 	configPath := createTempConfig(t, testConfigV1)
 	logger := &mockLogger{}
 

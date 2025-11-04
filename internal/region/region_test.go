@@ -321,9 +321,9 @@ func TestValidateURL(t *testing.T) {
 
 func TestGetRegionFromURL(t *testing.T) {
 	tests := []struct {
-		url          string
+		url            string
 		expectedRegion Region
-		expectError  bool
+		expectError    bool
 	}{
 		{"https://api.telematics.hyundaiusa.com/v1/vehicles", RegionNorthAmerica, false},
 		{"https://api.eu.bluelinky.com/v1/vehicles", RegionEurope, false},

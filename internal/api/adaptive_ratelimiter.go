@@ -25,9 +25,9 @@ type AdaptiveRateLimiter struct {
 	minRate       rate.Limit // Minimum rate to prevent complete throttling
 
 	// Metrics
-	rateLimitHits    int64
+	rateLimitHits      int64
 	dynamicAdjustments int64
-	lastAdjustment   time.Time
+	lastAdjustment     time.Time
 }
 
 // NewAdaptiveRateLimiter creates a new adaptive rate limiter
@@ -36,12 +36,12 @@ func NewAdaptiveRateLimiter(requestsPerHour int) *AdaptiveRateLimiter {
 	baseRate := rate.Limit(rps)
 
 	return &AdaptiveRateLimiter{
-		limiter:       rate.NewLimiter(baseRate, 1),
-		baseRate:      baseRate,
-		currentRate:   baseRate,
-		backoffFactor: 0.5, // Reduce to 50% on rate limit
-		recoveryRate:  1.1, // Recover by 10% over time
-		minRate:       rate.Limit(rps * 0.1), // Never go below 10% of base rate
+		limiter:        rate.NewLimiter(baseRate, 1),
+		baseRate:       baseRate,
+		currentRate:    baseRate,
+		backoffFactor:  0.5,                   // Reduce to 50% on rate limit
+		recoveryRate:   1.1,                   // Recover by 10% over time
+		minRate:        rate.Limit(rps * 0.1), // Never go below 10% of base rate
 		lastAdjustment: time.Now(),
 	}
 }
