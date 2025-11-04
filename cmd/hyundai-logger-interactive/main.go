@@ -31,7 +31,7 @@ const banner = `
 type InteractiveCLI struct {
 	config    *config.Config
 	apiClient *api.Client
-	db        *database.DB
+	db        *database.Client
 	startTime time.Time
 }
 
@@ -42,33 +42,29 @@ func main() {
 	fmt.Print(banner)
 
 	// Load configuration
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.LoadConfig(*configPath)
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create API client
-	retryConfig := retry.Config{
-		MaxAttempts:       cfg.Retry.MaxAttempts,
-		InitialDelayMs:    cfg.Retry.InitialDelayMs,
-		MaxDelayMs:        cfg.Retry.MaxDelayMs,
-		BackoffMultiplier: cfg.Retry.BackoffMultiplier,
-	}
-
-	apiClient := api.NewClient(
+	apiClient, err := api.NewClient(
+		cfg.Hyundai.Region,
+		cfg.Hyundai.Brand,
 		cfg.Hyundai.Username,
 		cfg.Hyundai.Password,
 		cfg.Hyundai.PIN,
-		cfg.Hyundai.Brand,
-		cfg.Hyundai.Region,
-		cfg.RateLimit.RequestsPerHour,
-		retryConfig,
+		cfg.Hyundai.RefreshToken,
 	)
+	if err != nil {
+		fmt.Printf("Error creating API client: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Connect to database
 	ctx := context.Background()
-	db, err := database.New(ctx, cfg.Database.URL, cfg.Database.Token,
+	db, err := database.NewClient(cfg.Database.URL, cfg.Database.Token,
 		cfg.Database.Organization, cfg.Database.Bucket)
 	if err != nil {
 		fmt.Printf("Warning: Database connection failed: %v\n", err)

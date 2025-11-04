@@ -231,10 +231,14 @@ func validateInfluxDB(cfg *config.Config, verbose bool) ValidationResult {
 	}
 
 	if health.Status != "pass" {
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
 		return ValidationResult{
 			Component: "InfluxDB - Health",
 			Status:    "fail",
-			Message:   fmt.Sprintf("Health check failed: %s", health.Message),
+			Message:   fmt.Sprintf("Health check failed: %s", msg),
 			Duration:  time.Since(start),
 		}
 	}
@@ -272,7 +276,11 @@ func validateInfluxDB(cfg *config.Config, verbose bool) ValidationResult {
 	}
 
 	if verbose {
-		fmt.Printf("  ✓ Bucket exists (ID: %s)\n", bucket.Id)
+		bucketID := ""
+		if bucket.Id != nil {
+			bucketID = *bucket.Id
+		}
+		fmt.Printf("  ✓ Bucket exists (ID: %s)\n", bucketID)
 	}
 
 	// Test write permissions

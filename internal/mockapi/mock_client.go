@@ -24,7 +24,7 @@ type MockClient struct {
 	odometer       float64
 	charging       bool
 	chargingPower  float64
-	location       api.LocationData
+	location       api.Location
 }
 
 // MockConfig configures the mock client behavior
@@ -70,7 +70,7 @@ func NewMockClient(config MockConfig) *MockClient {
 		batteryLevel: config.InitialBattery,
 		odometer:     config.InitialOdometer,
 		charging:     false,
-		location: api.LocationData{
+		location: api.Location{
 			Latitude:  37.5665, // Seoul, South Korea (Hyundai HQ)
 			Longitude: 126.9780,
 		},
@@ -80,12 +80,13 @@ func NewMockClient(config MockConfig) *MockClient {
 	client.vehicles = make([]api.Vehicle, config.NumVehicles)
 	for i := 0; i < config.NumVehicles; i++ {
 		client.vehicles[i] = api.Vehicle{
-			VehicleID: fmt.Sprintf("mock-vehicle-%d", i+1),
-			VIN:       fmt.Sprintf("MOCK%dVIN123456789%02d", i+1, i+1),
-			Make:      "Hyundai",
-			Model:     []string{"Ioniq 5", "Ioniq 6", "Kona Electric"}[i%3],
-			Year:      2024,
-			Nickname:  fmt.Sprintf("Mock Vehicle %d", i+1),
+			VehicleID:    fmt.Sprintf("mock-vehicle-%d", i+1),
+			VIN:          fmt.Sprintf("MOCK%dVIN123456789%02d", i+1, i+1),
+			VehicleName:  "Hyundai",
+			VehicleModel: []string{"Ioniq 5", "Ioniq 6", "Kona Electric"}[i%3],
+			Year:         "2024",
+			Nickname:     fmt.Sprintf("Mock Vehicle %d", i+1),
+			Color:        "Blue",
 		}
 	}
 
@@ -152,18 +153,19 @@ func (m *MockClient) GetVehicleStatus(ctx context.Context, vehicleID string) (*a
 
 	// Build status
 	status := &api.VehicleStatus{
-		VIN:       vehicle.VIN,
-		Timestamp: time.Now(),
-		Odometer:  m.odometer,
-		Location:  &m.location,
-		EV: &api.EVStatus{
-			BatteryLevel:    m.batteryLevel,
-			Charging:        m.charging,
+		LastUpdateTime: time.Now(),
+		OdometerStatus: api.OdometerStatus{
+			Value: int(m.odometer),
+			Unit:  "km",
+		},
+		VehicleLocation: m.location,
+		EVStatus: &api.EVStatus{
+			BatteryLevel:    int(m.batteryLevel),
+			BatteryCharge:   m.charging,
 			ChargingPower:   m.chargingPower,
 			BatteryCapacity: m.config.BatteryCapacityKWh,
-			RangeKM:         m.calculateRange(),
+			RangeEV:         m.calculateRange(),
 			PluggedIn:       m.charging,
-			ChargeEndTime:   time.Now().Add(m.calculateTimeToFull()),
 		},
 	}
 

@@ -56,7 +56,7 @@ func New(cfg Config) (*Reloader, error) {
 	}
 
 	// Load initial configuration
-	initialConfig, err := config.Load(cfg.ConfigPath)
+	initialConfig, err := config.LoadConfig(cfg.ConfigPath)
 	if err != nil {
 		watcher.Close()
 		return nil, fmt.Errorf("loading initial config: %w", err)
@@ -139,7 +139,7 @@ func (r *Reloader) handleReload() {
 	r.logger.Info("Reloading configuration from: %s", r.configPath)
 
 	// Load new configuration
-	newConfig, err := config.Load(r.configPath)
+	newConfig, err := config.LoadConfig(r.configPath)
 	if err != nil {
 		r.logger.Error("Failed to load new configuration: %v", err)
 		r.logger.Error("Keeping current configuration")
@@ -185,45 +185,31 @@ func (r *Reloader) logConfigChanges(old, new *config.Config) {
 			new.RateLimit.RequestsPerHour)
 	}
 
-	// Log schedule changes
-	if old.RateLimit.Schedule.Enabled != new.RateLimit.Schedule.Enabled {
-		r.logger.Info("  Time-based schedule: %v → %v",
-			old.RateLimit.Schedule.Enabled,
-			new.RateLimit.Schedule.Enabled)
-	}
-
-	// Log charging config changes
-	if old.RateLimit.ChargingConfig.Enabled != new.RateLimit.ChargingConfig.Enabled {
-		r.logger.Info("  Charging detection: %v → %v",
-			old.RateLimit.ChargingConfig.Enabled,
-			new.RateLimit.ChargingConfig.Enabled)
-	}
-
-	if old.RateLimit.ChargingConfig.IntervalMinutes != new.RateLimit.ChargingConfig.IntervalMinutes {
-		r.logger.Info("  Charging interval: %dm → %dm",
-			old.RateLimit.ChargingConfig.IntervalMinutes,
-			new.RateLimit.ChargingConfig.IntervalMinutes)
-	}
-
-	// Log logging level changes
-	if old.Logging.Level != new.Logging.Level {
-		r.logger.Info("  Logging level: %s → %s",
-			old.Logging.Level,
-			new.Logging.Level)
-	}
+// DISABLED: 	// Log schedule changes
+// DISABLED: 	if old.RateLimit.Schedule.Enabled != new.RateLimit.Schedule.Enabled {
+// DISABLED: 		r.logger.Info("  Time-based schedule: %v → %v",
+// DISABLED: 			old.RateLimit.Schedule.Enabled,
+// DISABLED: 			new.RateLimit.Schedule.Enabled)
+// DISABLED: 	}
+// DISABLED: 
+// DISABLED: 	// Log charging config changes
+// DISABLED: 	if old.RateLimit.ChargingConfig.Enabled != new.RateLimit.ChargingConfig.Enabled {
+// DISABLED: 		r.logger.Info("  Charging detection: %v → %v",
+// DISABLED: 			old.RateLimit.ChargingConfig.Enabled,
+// DISABLED: 			new.RateLimit.ChargingConfig.Enabled)
+// DISABLED: 	}
+// DISABLED: 
+// DISABLED: 	if old.RateLimit.ChargingConfig.IntervalMinutes != new.RateLimit.ChargingConfig.IntervalMinutes {
+// DISABLED: 		r.logger.Info("  Charging interval: %dm → %dm",
+// DISABLED: 			old.RateLimit.ChargingConfig.IntervalMinutes,
+// DISABLED: 			new.RateLimit.ChargingConfig.IntervalMinutes)
+// DISABLED: 	}
 
 	// Log alert changes
 	if old.Alerts.Enabled != new.Alerts.Enabled {
 		r.logger.Info("  Email alerts: %v → %v",
 			old.Alerts.Enabled,
 			new.Alerts.Enabled)
-	}
-
-	// Log webhook changes
-	if old.Webhooks.Enabled != new.Webhooks.Enabled {
-		r.logger.Info("  Webhooks: %v → %v",
-			old.Webhooks.Enabled,
-			new.Webhooks.Enabled)
 	}
 }
 
@@ -239,7 +225,7 @@ func (r *Reloader) Close() error {
 func (r *Reloader) ForceReload() error {
 	r.logger.Info("Force reloading configuration")
 
-	newConfig, err := config.Load(r.configPath)
+	newConfig, err := config.LoadConfig(r.configPath)
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}

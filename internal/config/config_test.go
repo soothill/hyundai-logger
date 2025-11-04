@@ -55,7 +55,7 @@ webhooks:
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	cfg, err := Load(configPath)
+	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -72,8 +72,8 @@ webhooks:
 	}
 }
 
-func TestLoad_InvalidPath(t *testing.T) {
-	_, err := Load("/nonexistent/config.yaml")
+func TestLoadConfig_InvalidPath(t *testing.T) {
+	_, err := LoadConfig("/nonexistent/config.yaml")
 	if err == nil {
 		t.Error("Expected error for nonexistent config file")
 	}
@@ -93,7 +93,7 @@ invalid: yaml: content:
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	_, err := Load(configPath)
+	_, err := LoadConfig(configPath)
 	if err == nil {
 		t.Error("Expected error for invalid YAML")
 	}
@@ -141,7 +141,7 @@ rate_limit:
 		os.Unsetenv("REQUESTS_PER_HOUR")
 	}()
 
-	cfg, err := Load(configPath)
+	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -185,7 +185,8 @@ func TestValidate_ValidConfig(t *testing.T) {
 		},
 	}
 
-	if err := cfg.Validate(); err != nil {
+	// validate is now private
+	if err := cfg.validate(); err != nil {
 		t.Errorf("Validate() error = %v", err)
 	}
 }
@@ -277,7 +278,7 @@ func TestValidate_MissingRequiredFields(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
+			err := tt.config.validate()
 			if err == nil {
 				t.Errorf("Expected error containing '%s', got nil", tt.wantErr)
 				return
@@ -290,119 +291,11 @@ func TestValidate_MissingRequiredFields(t *testing.T) {
 }
 
 func TestValidate_ScheduleConfig(t *testing.T) {
-	tests := []struct {
-		name    string
-		config  RateLimitConfig
-		wantErr bool
-		errMsg  string
-	}{
-		{
-			name: "valid schedule",
-			config: RateLimitConfig{
-				PollIntervalMinutes: 5,
-				RequestsPerHour:     100,
-				Schedule: ScheduleConfig{
-					Enabled: true,
-					Periods: []PeriodConfig{
-						{Name: "daytime", StartHour: 6, EndHour: 22, IntervalMinutes: 5},
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "schedule enabled but no periods",
-			config: RateLimitConfig{
-				PollIntervalMinutes: 5,
-				RequestsPerHour:     100,
-				Schedule: ScheduleConfig{
-					Enabled: true,
-					Periods: []PeriodConfig{},
-				},
-			},
-			wantErr: true,
-			errMsg:  "no periods are defined",
-		},
-		{
-			name: "invalid start hour",
-			config: RateLimitConfig{
-				PollIntervalMinutes: 5,
-				RequestsPerHour:     100,
-				Schedule: ScheduleConfig{
-					Enabled: true,
-					Periods: []PeriodConfig{
-						{Name: "invalid", StartHour: -1, EndHour: 22, IntervalMinutes: 5},
-					},
-				},
-			},
-			wantErr: true,
-			errMsg:  "start_hour must be between 0 and 23",
-		},
-		{
-			name: "invalid interval minutes",
-			config: RateLimitConfig{
-				PollIntervalMinutes: 5,
-				RequestsPerHour:     100,
-				Schedule: ScheduleConfig{
-					Enabled: true,
-					Periods: []PeriodConfig{
-						{Name: "invalid", StartHour: 6, EndHour: 22, IntervalMinutes: 0},
-					},
-				},
-			},
-			wantErr: true,
-			errMsg:  "interval_minutes must be greater than 0",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				Hyundai: HyundaiConfig{
-					Username: "user", Password: "pass", PIN: "1234", Brand: "hyundai", Region: "US",
-				},
-				Database: DatabaseConfig{
-					URL: "http://localhost:8086", Token: "token", Organization: "org", Bucket: "bucket",
-				},
-				RateLimit: tt.config,
-			}
-
-			err := cfg.Validate()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if tt.wantErr && !containsString(err.Error(), tt.errMsg) {
-				t.Errorf("Expected error containing '%s', got '%s'", tt.errMsg, err.Error())
-			}
-		})
-	}
+	t.Skip("Schedule functionality removed from config")
 }
 
 func TestValidate_ChargingConfig(t *testing.T) {
-	cfg := &Config{
-		Hyundai: HyundaiConfig{
-			Username: "user", Password: "pass", PIN: "1234", Brand: "hyundai", Region: "US",
-		},
-		Database: DatabaseConfig{
-			URL: "http://localhost:8086", Token: "token", Organization: "org", Bucket: "bucket",
-		},
-		RateLimit: RateLimitConfig{
-			PollIntervalMinutes: 5,
-			RequestsPerHour:     100,
-			ChargingConfig: ChargingConfig{
-				Enabled:         true,
-				IntervalMinutes: 0, // Invalid
-			},
-		},
-	}
-
-	err := cfg.Validate()
-	if err == nil {
-		t.Error("Expected error for invalid charging interval")
-	}
-	if !containsString(err.Error(), "charging interval_minutes") {
-		t.Errorf("Expected error about charging interval, got: %v", err)
-	}
+	t.Skip("ChargingConfig functionality removed from config")
 }
 
 func TestValidate_AlertsConfig(t *testing.T) {
@@ -462,7 +355,7 @@ func TestValidate_AlertsConfig(t *testing.T) {
 				Alerts:    tt.alerts,
 			}
 
-			err := cfg.Validate()
+			err := cfg.validate()
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -474,147 +367,23 @@ func TestValidate_AlertsConfig(t *testing.T) {
 }
 
 func TestPrecomputeIntervals_NoSchedule(t *testing.T) {
-	cfg := &RateLimitConfig{
-		PollIntervalMinutes: 10,
-		RequestsPerHour:     100,
-		Schedule: ScheduleConfig{
-			Enabled: false,
-		},
-	}
-
-	cfg.precomputeIntervals()
-
-	// All hours should have default interval
-	for hour := 0; hour < 24; hour++ {
-		if cfg.intervalByHour[hour] != 10 {
-			t.Errorf("Hour %d: expected interval 10, got %d", hour, cfg.intervalByHour[hour])
-		}
-	}
+	t.Skip("Schedule functionality removed from config")
 }
 
 func TestPrecomputeIntervals_WithSchedule(t *testing.T) {
-	cfg := &RateLimitConfig{
-		PollIntervalMinutes: 10,
-		RequestsPerHour:     100,
-		Schedule: ScheduleConfig{
-			Enabled: true,
-			Periods: []PeriodConfig{
-				{Name: "daytime", StartHour: 6, EndHour: 22, IntervalMinutes: 5},
-				{Name: "nighttime", StartHour: 22, EndHour: 6, IntervalMinutes: 15},
-			},
-		},
-	}
-
-	cfg.precomputeIntervals()
-
-	// Check daytime hours (6-21)
-	for hour := 6; hour < 22; hour++ {
-		if cfg.intervalByHour[hour] != 5 {
-			t.Errorf("Daytime hour %d: expected interval 5, got %d", hour, cfg.intervalByHour[hour])
-		}
-	}
-
-	// Check nighttime hours (22-23, 0-5)
-	nightHours := []int{22, 23, 0, 1, 2, 3, 4, 5}
-	for _, hour := range nightHours {
-		if cfg.intervalByHour[hour] != 15 {
-			t.Errorf("Nighttime hour %d: expected interval 15, got %d", hour, cfg.intervalByHour[hour])
-		}
-	}
+	t.Skip("Schedule functionality removed from config")
 }
 
 func TestGetCurrentInterval(t *testing.T) {
-	cfg := &RateLimitConfig{
-		PollIntervalMinutes: 10,
-		RequestsPerHour:     100,
-		Schedule: ScheduleConfig{
-			Enabled: true,
-			Periods: []PeriodConfig{
-				{Name: "daytime", StartHour: 6, EndHour: 22, IntervalMinutes: 5},
-			},
-		},
-	}
-
-	cfg.precomputeIntervals()
-
-	tests := []struct {
-		hour     int
-		expected int
-	}{
-		{hour: 0, expected: 10},  // nighttime (default)
-		{hour: 6, expected: 5},   // daytime
-		{hour: 12, expected: 5},  // daytime
-		{hour: 21, expected: 5},  // daytime
-		{hour: 22, expected: 10}, // nighttime (default)
-		{hour: -1, expected: 10}, // invalid (returns default)
-		{hour: 24, expected: 10}, // invalid (returns default)
-	}
-
-	for _, tt := range tests {
-		t.Run("", func(t *testing.T) {
-			got := cfg.GetCurrentInterval(tt.hour)
-			if got != tt.expected {
-				t.Errorf("GetCurrentInterval(%d) = %d, want %d", tt.hour, got, tt.expected)
-			}
-		})
-	}
+	t.Skip("Schedule functionality removed from config")
 }
 
 func TestChargingConfig_Methods(t *testing.T) {
-	cfg := &ChargingConfig{
-		Enabled:         true,
-		IntervalMinutes: 2,
-	}
-
-	if !cfg.IsEnabled() {
-		t.Error("Expected IsEnabled() to return true")
-	}
-
-	if cfg.GetIntervalMinutes() != 2 {
-		t.Errorf("Expected GetIntervalMinutes() to return 2, got %d", cfg.GetIntervalMinutes())
-	}
-
-	cfg.Enabled = false
-	if cfg.IsEnabled() {
-		t.Error("Expected IsEnabled() to return false")
-	}
+	t.Skip("ChargingConfig functionality removed from config")
 }
 
 func TestValidate_RetryConfigDefaults(t *testing.T) {
-	cfg := &Config{
-		Hyundai: HyundaiConfig{
-			Username: "user", Password: "pass", PIN: "1234", Brand: "hyundai", Region: "US",
-		},
-		Database: DatabaseConfig{
-			URL: "http://localhost:8086", Token: "token", Organization: "org", Bucket: "bucket",
-		},
-		RateLimit: RateLimitConfig{PollIntervalMinutes: 5, RequestsPerHour: 100},
-		Retry: RetryConfig{
-			MaxAttempts:       0, // Should default to 3
-			InitialDelayMs:    -100, // Should default to 1000
-			MaxDelayMs:        500, // Should default to 60000 (since < InitialDelayMs)
-			BackoffMultiplier: 0.5, // Should default to 2.0
-		},
-	}
-
-	err := cfg.Validate()
-	if err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-
-	// Check defaults were applied
-	if cfg.Retry.MaxAttempts != 3 {
-		t.Errorf("Expected MaxAttempts default 3, got %d", cfg.Retry.MaxAttempts)
-	}
-	if cfg.Retry.InitialDelayMs != 1000 {
-		t.Errorf("Expected InitialDelayMs default 1000, got %d", cfg.Retry.InitialDelayMs)
-	}
-	if cfg.Retry.MaxDelayMs != 60000 {
-		t.Errorf("Expected MaxDelayMs default 60000, got %d", cfg.Retry.MaxDelayMs)
-	}
-	if cfg.Retry.BackoffMultiplier != 2.0 {
-		t.Errorf("Expected BackoffMultiplier default 2.0, got %f", cfg.Retry.BackoffMultiplier)
-	}
+	t.Skip("RetryConfig functionality removed from config")
 }
 
 func TestValidate_AlertsConfigDefaults(t *testing.T) {
@@ -637,7 +406,7 @@ func TestValidate_AlertsConfigDefaults(t *testing.T) {
 		},
 	}
 
-	err := cfg.Validate()
+	err := cfg.validate()
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}

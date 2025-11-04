@@ -47,6 +47,10 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(BINARY_NAME)
 
+clean-all: clean
+	@echo "Cleaning Python environment..."
+	rm -rf build/venv
+
 deps:
 	@echo "Downloading dependencies..."
 	$(GOMOD) download
@@ -78,7 +82,13 @@ get-token:
 	@echo "Usage: make get-token REGION=EU BRAND=hyundai"
 	@if [ -z "$(REGION)" ]; then echo "Error: REGION not set"; exit 1; fi
 	@if [ -z "$(BRAND)" ]; then echo "Error: BRAND not set"; exit 1; fi
-	python3 scripts/get_refresh_token.py $(REGION) $(BRAND)
+	@if [ -d "build/venv" ]; then \
+		echo "Using Python virtual environment..."; \
+		build/venv/bin/python3 scripts/get_refresh_token.py $(REGION) $(BRAND); \
+	else \
+		echo "Using system Python (run 'make install-python-deps' to create venv)..."; \
+		python3 scripts/get_refresh_token.py $(REGION) $(BRAND); \
+	fi
 
 oauth-manual:
 	@echo "Starting manual OAuth token helper..."
@@ -86,8 +96,24 @@ oauth-manual:
 	@./scripts/manual-token-helper.sh
 
 install-python-deps:
-	@echo "Installing Python dependencies for token fetcher..."
-	pip3 install selenium requests
+	@echo "Setting up Python environment..."
+	@if [ ! -d "build/venv" ]; then \
+		echo "Creating Python virtual environment in build/venv..."; \
+		python3 -m venv build/venv; \
+		echo "✓ Virtual environment created"; \
+	else \
+		echo "✓ Virtual environment already exists"; \
+	fi
+	@echo "Installing Python dependencies..."
+	@build/venv/bin/pip install --quiet --upgrade pip
+	@build/venv/bin/pip install selenium requests
+	@echo "✓ Dependencies installed"
+	@echo ""
+	@echo "To use the Python environment:"
+	@echo "  source build/venv/bin/activate"
+	@echo ""
+	@echo "Or run scripts directly:"
+	@echo "  build/venv/bin/python3 scripts/get_refresh_token.py EU hyundai"
 
 # Database operations
 init-db: build

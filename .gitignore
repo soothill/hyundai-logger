@@ -7,6 +7,9 @@ hyundai-logger-*
 *.so
 *.dylib
 
+# Build artifacts
+build/
+
 # Test binary
 *.test
 
@@ -46,3 +49,7 @@ config.yaml
 /export-data
 coverage.txt
 /preflight
+
+# Python
+*.pyc
+__pycache__/

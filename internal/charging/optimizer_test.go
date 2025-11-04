@@ -44,9 +44,9 @@ func TestDetectPhase_NotCharging(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:     false,
-			BatteryLevel: 75.0,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:     false,
+			BatteryLevel: 75.,
 		},
 	}
 
@@ -60,8 +60,8 @@ func TestDetectPhase_FastCharge(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   50.0,
 			ChargingPower:  100.0, // >50 kW
 		},
@@ -77,8 +77,8 @@ func TestDetectPhase_NormalCharge(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   60.0,
 			ChargingPower:  11.0, // 7-50 kW
 		},
@@ -94,8 +94,8 @@ func TestDetectPhase_TricklePower(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   80.0,
 			ChargingPower:  3.0, // <7 kW
 		},
@@ -111,8 +111,8 @@ func TestDetectPhase_TrickleBattery(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   96.0, // >95%
 			ChargingPower:  10.0,
 		},
@@ -128,8 +128,8 @@ func TestDetectPhase_Complete(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   100.0,
 			ChargingPower:  2.0,
 		},
@@ -158,8 +158,8 @@ func TestDetectPhase_NoPowerData(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   70.0,
 			ChargingPower:  0, // No power data
 		},
@@ -199,8 +199,8 @@ func TestGetInterval(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   50.0,
 			ChargingPower:  100.0, // Fast charge
 		},
@@ -241,8 +241,8 @@ func TestGetStats(t *testing.T) {
 	optimizer := NewWithDefaults()
 
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   75.5,
 			ChargingPower:  50.5,
 		},
@@ -286,8 +286,8 @@ func TestEstimateTimeToFull(t *testing.T) {
 		{
 			name: "Not charging",
 			status: &api.VehicleStatus{
-				EV: &api.EVStatus{
-					Charging: false,
+				EVStatus: &api.EVStatus{
+					BatteryCharge: false,
 				},
 			},
 			expected: 0,
@@ -295,8 +295,8 @@ func TestEstimateTimeToFull(t *testing.T) {
 		{
 			name: "No power data",
 			status: &api.VehicleStatus{
-				EV: &api.EVStatus{
-					Charging:       true,
+				EVStatus: &api.EVStatus{
+					BatteryCharge:       true,
 					ChargingPower:  0,
 				},
 			},
@@ -305,8 +305,8 @@ func TestEstimateTimeToFull(t *testing.T) {
 		{
 			name: "Already full",
 			status: &api.VehicleStatus{
-				EV: &api.EVStatus{
-					Charging:       true,
+				EVStatus: &api.EVStatus{
+					BatteryCharge:       true,
 					BatteryLevel:   100.0,
 					ChargingPower:  10.0,
 				},
@@ -316,8 +316,8 @@ func TestEstimateTimeToFull(t *testing.T) {
 		{
 			name: "50% charged, 64 kWh battery, 50 kW charging",
 			status: &api.VehicleStatus{
-				EV: &api.EVStatus{
-					Charging:        true,
+				EVStatus: &api.EVStatus{
+					BatteryCharge:        true,
 					BatteryLevel:    50.0,
 					ChargingPower:   50.0,
 					BatteryCapacity: 64.0,
@@ -389,15 +389,15 @@ func TestCustomConfig(t *testing.T) {
 		FastChargePowerKW:    100.0,
 		TrickleChargePowerKW: 5.0,
 		TrickleBatteryLevel:  90.0,
-		CompleteBatteryLevel: 98.0,
+		CompleteBatteryLevel: 98.,
 	}
 
 	optimizer := New(config)
 
 	// Test with custom fast charge threshold
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   60.0,
 			ChargingPower:  75.0, // Would be fast with default, normal with custom
 		},
@@ -417,8 +417,8 @@ func TestCustomConfig(t *testing.T) {
 func BenchmarkDetectPhase(b *testing.B) {
 	optimizer := NewWithDefaults()
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   75.0,
 			ChargingPower:  50.0,
 		},
@@ -433,8 +433,8 @@ func BenchmarkDetectPhase(b *testing.B) {
 func BenchmarkGetInterval(b *testing.B) {
 	optimizer := NewWithDefaults()
 	status := &api.VehicleStatus{
-		EV: &api.EVStatus{
-			Charging:       true,
+		EVStatus: &api.EVStatus{
+			BatteryCharge:       true,
 			BatteryLevel:   75.0,
 			ChargingPower:  50.0,
 		},

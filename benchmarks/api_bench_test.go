@@ -37,11 +37,13 @@ func createTestAPIServer() *httptest.Server {
 		vehicles := api.VehiclesResponse{
 			Vehicles: []api.Vehicle{
 				{
-					VehicleID: "test-1",
-					VIN:       "5NPE24AF1KH123456",
-					Make:      "Hyundai",
-					Model:     "IONIQ 5",
-					Year:      2024,
+					VehicleID:    "test-1",
+					VIN:          "5NPE24AF1KH123456",
+					Nickname:     "Test Car",
+					VehicleName:  "Hyundai",
+					VehicleModel: "IONIQ 5",
+					Year:         "2024",
+					Color:        "Blue",
 				},
 			},
 		}
@@ -52,18 +54,15 @@ func createTestAPIServer() *httptest.Server {
 	// Vehicle status endpoint
 	mux.HandleFunc("/v2/vehicles/test-1/status", func(w http.ResponseWriter, r *http.Request) {
 		status := &api.VehicleStatus{
-			VIN:       "5NPE24AF1KH123456",
-			Timestamp: time.Now(),
-			Odometer:  12345.6,
-			FuelLevel: 75.5,
-			Engine: api.EngineStatus{
-				Running: false,
-				RangeKM: 450.0,
+			LastUpdateTime: time.Now(),
+			OdometerStatus: api.OdometerStatus{
+				Value: 12345.6,
+				Unit:  1,
 			},
-			EV: &api.EVStatus{
-				BatteryLevel: 85.5,
-				Charging:     true,
-				RangeKM:      400.0,
+			EVStatus: &api.EVStatus{
+				BatteryLevel:  85,
+				BatteryCharge: true,
+				RangeEV:       400.0,
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")

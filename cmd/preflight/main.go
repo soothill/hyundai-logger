@@ -98,7 +98,11 @@ func checkInfluxDB(cfg *config.Config) bool {
 	}
 
 	if health.Status != "pass" {
-		printError("", fmt.Errorf("health check failed: %s", health.Message))
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		printError("", fmt.Errorf("health check failed: %s", msg))
 		return false
 	}
 	printSuccess("Connected")
@@ -120,7 +124,11 @@ func checkInfluxDB(cfg *config.Config) bool {
 	if err != nil {
 		printWarning(fmt.Sprintf("Bucket '%s' not found (will be created on first run)", cfg.Database.Bucket))
 	} else {
-		printSuccess(fmt.Sprintf("Bucket exists (ID: %s)", bucket.Id))
+		bucketID := ""
+		if bucket.Id != nil {
+			bucketID = *bucket.Id
+		}
+		printSuccess(fmt.Sprintf("Bucket exists (ID: %s)", bucketID))
 	}
 
 	// Test write permission

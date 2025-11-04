@@ -37,7 +37,11 @@ func NewClient(cfg config.DatabaseConfig) (*Client, error) {
 	}
 
 	if health.Status != "pass" {
-		return nil, fmt.Errorf("InfluxDB health check failed: %s", health.Message)
+		msg := ""
+		if health.Message != nil {
+			msg = *health.Message
+		}
+		return nil, fmt.Errorf("InfluxDB health check failed: %s", msg)
 	}
 
 	// Get write API
@@ -86,7 +90,11 @@ func (c *Client) InitializeSchema() error {
 		}
 		fmt.Printf("Created bucket: %s\n", c.bucket)
 	} else {
-		fmt.Printf("Bucket already exists: %s (ID: %s)\n", bucket.Name, bucket.Id)
+		bucketID := ""
+		if bucket.Id != nil {
+			bucketID = *bucket.Id
+		}
+		fmt.Printf("Bucket already exists: %s (ID: %s)\n", bucket.Name, bucketID)
 	}
 
 	return nil

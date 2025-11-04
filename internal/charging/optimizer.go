@@ -85,17 +85,17 @@ func (o *Optimizer) GetInterval(status *api.VehicleStatus) time.Duration {
 // DetectPhase determines the current charging phase
 func (o *Optimizer) DetectPhase(status *api.VehicleStatus) ChargingPhase {
 	// No EV status means not an EV or no data
-	if status.EV == nil {
+	if status.EVStatus == nil {
 		return PhaseNotCharging
 	}
 
 	// Not charging
-	if !status.EV.Charging {
+	if !status.EVStatus.BatteryCharge {
 		return PhaseNotCharging
 	}
 
 	// Check battery level first
-	batteryLevel := status.EV.BatteryLevel
+	batteryLevel := float64(status.EVStatus.BatteryLevel)
 
 	// Complete - at or near 100%
 	if batteryLevel >= o.config.CompleteBatteryLevel {
@@ -108,14 +108,14 @@ func (o *Optimizer) DetectPhase(status *api.VehicleStatus) ChargingPhase {
 	}
 
 	// Check charging power if available
-	if status.EV.ChargingPower > 0 {
+	if status.EVStatus.ChargingPower > 0 {
 		// Fast charging - high power (>50 kW)
-		if status.EV.ChargingPower >= o.config.FastChargePowerKW {
+		if status.EVStatus.ChargingPower >= o.config.FastChargePowerKW {
 			return PhaseFastCharge
 		}
 
 		// Trickle - low power (<7 kW)
-		if status.EV.ChargingPower < o.config.TrickleChargePowerKW {
+		if status.EVStatus.ChargingPower < o.config.TrickleChargePowerKW {
 			return PhaseTrickle
 		}
 
@@ -184,10 +184,10 @@ func (o *Optimizer) GetStats(status *api.VehicleStatus) Stats {
 		PhaseDescription: o.GetPhaseDescription(phase),
 	}
 
-	if status.EV != nil {
-		stats.BatteryLevel = status.EV.BatteryLevel
-		stats.ChargingPower = status.EV.ChargingPower
-		stats.IsCharging = status.EV.Charging
+	if status.EVStatus != nil {
+		stats.BatteryLevel = float64(status.EVStatus.BatteryLevel)
+		stats.ChargingPower = status.EVStatus.ChargingPower
+		stats.IsCharging = status.EVStatus.BatteryCharge
 	}
 
 	return stats
@@ -196,21 +196,21 @@ func (o *Optimizer) GetStats(status *api.VehicleStatus) Stats {
 // EstimateTimeToFull estimates time remaining to full charge
 // Returns 0 if not charging or no power data available
 func (o *Optimizer) EstimateTimeToFull(status *api.VehicleStatus) time.Duration {
-	if status.EV == nil || !status.EV.Charging {
+	if status.EVStatus == nil || !status.EVStatus.BatteryCharge {
 		return 0
 	}
 
-	if status.EV.ChargingPower <= 0 {
+	if status.EVStatus.ChargingPower <= 0 {
 		return 0 // No power data available
 	}
 
 	// Calculate remaining capacity
-	batteryCapacityKWh := status.EV.BatteryCapacity
+	batteryCapacityKWh := status.EVStatus.BatteryCapacity
 	if batteryCapacityKWh <= 0 {
 		return 0 // No battery capacity data
 	}
 
-	remainingPercent := 100.0 - status.EV.BatteryLevel
+	remainingPercent := 100.0 - float64(status.EVStatus.BatteryLevel)
 	if remainingPercent <= 0 {
 		return 0 // Already full
 	}
@@ -218,7 +218,7 @@ func (o *Optimizer) EstimateTimeToFull(status *api.VehicleStatus) time.Duration 
 	remainingKWh := batteryCapacityKWh * (remainingPercent / 100.0)
 
 	// Time = Energy / Power (accounting for charging efficiency)
-	hoursToFull := remainingKWh / (status.EV.ChargingPower * chargingEfficiency)
+	hoursToFull := remainingKWh / (status.EVStatus.ChargingPower * chargingEfficiency)
 
 	return time.Duration(hoursToFull * float64(time.Hour))
 }
