@@ -12,11 +12,9 @@ import (
 	"os"
 	"time"
 
+	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/config"
-	"github.com/soothill/hyundai-logger/internal/database"
-	"github.com/soothill/hyundai-logger/internal/retry"
-	"github.com/soothill/hyundai-logger/internal/webhook"
 )
 
 const (
@@ -74,22 +72,11 @@ func main() {
 	// Validate configuration structure
 	results = append(results, validateConfigStructure(cfg))
 
-	// Validate Hyundai API
-	results = append(results, validateHyundaiAPI(cfg, *verbose))
-
 	// Validate InfluxDB
 	results = append(results, validateInfluxDB(cfg, *verbose))
 
-	// Validate webhooks
-	if cfg.Webhooks.Enabled {
-		results = append(results, validateWebhooks(cfg, *verbose)...)
-	} else {
-		results = append(results, ValidationResult{
-			Component: "Webhooks",
-			Status:    "warn",
-			Message:   "Disabled in configuration",
-		})
-	}
+	// Validate Hyundai API
+	results = append(results, validateHyundaiAPI(cfg, *verbose))
 
 	// Print summary
 	printSummary(results)
@@ -105,7 +92,7 @@ func loadConfig(path string) (*config.Config, error) {
 		return nil, fmt.Errorf("configuration file not found: %s", path)
 	}
 
-	cfg, err := config.Load(path)
+	cfg, err := config.LoadConfig(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -117,20 +104,11 @@ func validateConfigStructure(cfg *config.Config) ValidationResult {
 	start := time.Now()
 
 	// Check required fields
-	if cfg.Hyundai.Username == "" {
+	if cfg.Hyundai.RefreshToken == "" && cfg.Hyundai.Username == "" {
 		return ValidationResult{
 			Component: "Config Structure",
 			Status:    "fail",
-			Message:   "Hyundai username is required",
-			Duration:  time.Since(start),
-		}
-	}
-
-	if cfg.Hyundai.Password == "" {
-		return ValidationResult{
-			Component: "Config Structure",
-			Status:    "fail",
-			Message:   "Hyundai password is required",
+			Message:   "Either refresh_token or username is required",
 			Duration:  time.Since(start),
 		}
 	}
@@ -199,83 +177,31 @@ func validateConfigStructure(cfg *config.Config) ValidationResult {
 		}
 	}
 
+	// Check if brand and region are valid
+	validRegions := map[string]bool{"EU": true, "US": true, "CA": true}
+	if !validRegions[cfg.Hyundai.Region] {
+		return ValidationResult{
+			Component: "Config Structure",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Invalid region: %s (valid: EU, US, CA)", cfg.Hyundai.Region),
+			Duration:  time.Since(start),
+		}
+	}
+
+	validBrands := map[string]bool{"hyundai": true, "kia": true}
+	if !validBrands[cfg.Hyundai.Brand] {
+		return ValidationResult{
+			Component: "Config Structure",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Invalid brand: %s (valid: hyundai, kia)", cfg.Hyundai.Brand),
+			Duration:  time.Since(start),
+		}
+	}
+
 	return ValidationResult{
 		Component: "Config Structure",
 		Status:    "pass",
 		Message:   "All required fields present and valid",
-		Duration:  time.Since(start),
-	}
-}
-
-func validateHyundaiAPI(cfg *config.Config, verbose bool) ValidationResult {
-	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if verbose {
-		fmt.Printf("  Testing Hyundai API connection...\n")
-	}
-
-	retryConfig := retry.Config{
-		MaxAttempts:       1, // No retries for validation
-		InitialDelayMs:    100,
-		MaxDelayMs:        1000,
-		BackoffMultiplier: 2.0,
-	}
-
-	client := api.NewClient(
-		cfg.Hyundai.Username,
-		cfg.Hyundai.Password,
-		cfg.Hyundai.PIN,
-		cfg.Hyundai.Brand,
-		cfg.Hyundai.Region,
-		cfg.RateLimit.RequestsPerHour,
-		retryConfig,
-	)
-
-	// Try to authenticate
-	if err := client.Authenticate(ctx); err != nil {
-		return ValidationResult{
-			Component: "Hyundai API - Authentication",
-			Status:    "fail",
-			Message:   fmt.Sprintf("Login failed: %v", err),
-			Duration:  time.Since(start),
-		}
-	}
-
-	if verbose {
-		fmt.Printf("  ✓ Authentication successful\n")
-		fmt.Printf("  Fetching vehicle list...\n")
-	}
-
-	// Try to fetch vehicles
-	vehicles, err := client.GetVehicles(ctx)
-	if err != nil {
-		return ValidationResult{
-			Component: "Hyundai API - Vehicles",
-			Status:    "fail",
-			Message:   fmt.Sprintf("Failed to fetch vehicles: %v", err),
-			Duration:  time.Since(start),
-		}
-	}
-
-	if len(vehicles) == 0 {
-		return ValidationResult{
-			Component: "Hyundai API",
-			Status:    "warn",
-			Message:   "No vehicles found in account",
-			Duration:  time.Since(start),
-		}
-	}
-
-	if verbose {
-		fmt.Printf("  ✓ Found %d vehicle(s)\n", len(vehicles))
-	}
-
-	return ValidationResult{
-		Component: "Hyundai API",
-		Status:    "pass",
-		Message:   fmt.Sprintf("Connected successfully, found %d vehicle(s)", len(vehicles)),
 		Duration:  time.Since(start),
 	}
 }
@@ -289,34 +215,26 @@ func validateInfluxDB(cfg *config.Config, verbose bool) ValidationResult {
 		fmt.Printf("  Testing InfluxDB connection...\n")
 	}
 
-	db, err := database.New(
-		ctx,
-		cfg.Database.URL,
-		cfg.Database.Token,
-		cfg.Database.Organization,
-		cfg.Database.Bucket,
-	)
+	// Create InfluxDB client
+	client := influxdb2.NewClient(cfg.Database.URL, cfg.Database.Token)
+	defer client.Close()
+
+	// Test health
+	health, err := client.Health(ctx)
 	if err != nil {
 		return ValidationResult{
 			Component: "InfluxDB - Connection",
 			Status:    "fail",
-			Message:   fmt.Sprintf("Failed to create client: %v", err),
+			Message:   fmt.Sprintf("Failed to connect: %v", err),
 			Duration:  time.Since(start),
 		}
 	}
-	defer db.Close()
 
-	if verbose {
-		fmt.Printf("  ✓ Client created\n")
-		fmt.Printf("  Checking health...\n")
-	}
-
-	// Check health
-	if err := db.HealthCheck(ctx); err != nil {
+	if health.Status != "pass" {
 		return ValidationResult{
 			Component: "InfluxDB - Health",
 			Status:    "fail",
-			Message:   fmt.Sprintf("Health check failed: %v", err),
+			Message:   fmt.Sprintf("Health check failed: %s", health.Message),
 			Duration:  time.Since(start),
 		}
 	}
@@ -325,161 +243,137 @@ func validateInfluxDB(cfg *config.Config, verbose bool) ValidationResult {
 		fmt.Printf("  ✓ Health check passed\n")
 	}
 
+	// Test authentication and organization
+	orgAPI := client.OrganizationsAPI()
+	_, err = orgAPI.FindOrganizationByName(ctx, cfg.Database.Organization)
+	if err != nil {
+		return ValidationResult{
+			Component: "InfluxDB - Auth",
+			Status:    "fail",
+			Message:   "Authentication failed or organization not found",
+			Duration:  time.Since(start),
+		}
+	}
+
+	if verbose {
+		fmt.Printf("  ✓ Organization found\n")
+	}
+
+	// Test bucket access
+	bucketsAPI := client.BucketsAPI()
+	bucket, err := bucketsAPI.FindBucketByName(ctx, cfg.Database.Bucket)
+	if err != nil {
+		return ValidationResult{
+			Component: "InfluxDB",
+			Status:    "warn",
+			Message:   fmt.Sprintf("Bucket '%s' not found (will be created on first run)", cfg.Database.Bucket),
+			Duration:  time.Since(start),
+		}
+	}
+
+	if verbose {
+		fmt.Printf("  ✓ Bucket exists (ID: %s)\n", bucket.Id)
+	}
+
+	// Test write permissions
+	writeAPI := client.WriteAPIBlocking(cfg.Database.Organization, cfg.Database.Bucket)
+	testPoint := influxdb2.NewPoint(
+		"validation_test",
+		map[string]string{"test": "true"},
+		map[string]interface{}{"value": 1},
+		time.Now(),
+	)
+	err = writeAPI.WritePoint(ctx, testPoint)
+	if err != nil {
+		return ValidationResult{
+			Component: "InfluxDB",
+			Status:    "fail",
+			Message:   "Write test failed - check permissions",
+			Duration:  time.Since(start),
+		}
+	}
+
+	if verbose {
+		fmt.Printf("  ✓ Write permissions OK\n")
+	}
+
 	return ValidationResult{
 		Component: "InfluxDB",
 		Status:    "pass",
-		Message:   "Connected successfully and healthy",
+		Message:   "Connected successfully, all checks passed",
 		Duration:  time.Since(start),
 	}
 }
 
-func validateWebhooks(cfg *config.Config, verbose bool) []ValidationResult {
-	results := []ValidationResult{}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func validateHyundaiAPI(cfg *config.Config, verbose bool) ValidationResult {
+	start := time.Now()
 
-	// Validate Slack
-	if cfg.Webhooks.Slack.Enabled {
-		start := time.Now()
-		if verbose {
-			fmt.Printf("  Testing Slack webhook...\n")
-		}
+	if verbose {
+		fmt.Printf("  Testing Hyundai API connection...\n")
+	}
 
-		if cfg.Webhooks.Slack.WebhookURL == "" {
-			results = append(results, ValidationResult{
-				Component: "Webhook - Slack",
-				Status:    "fail",
-				Message:   "Webhook URL is required",
-				Duration:  time.Since(start),
-			})
-		} else {
-			webhookConfig := webhook.Config{
-				Enabled: true,
-				Slack: webhook.SlackConfig{
-					Enabled:    cfg.Webhooks.Slack.Enabled,
-					WebhookURL: cfg.Webhooks.Slack.WebhookURL,
-					Channel:    cfg.Webhooks.Slack.Channel,
-					Username:   cfg.Webhooks.Slack.Username,
-					IconEmoji:  cfg.Webhooks.Slack.IconEmoji,
-				},
-			}
-
-			notifier := webhook.New(webhookConfig)
-			if err := notifier.TestConnection(ctx); err != nil {
-				results = append(results, ValidationResult{
-					Component: "Webhook - Slack",
-					Status:    "fail",
-					Message:   fmt.Sprintf("Test failed: %v", err),
-					Duration:  time.Since(start),
-				})
-			} else {
-				results = append(results, ValidationResult{
-					Component: "Webhook - Slack",
-					Status:    "pass",
-					Message:   "Test notification sent successfully",
-					Duration:  time.Since(start),
-				})
-			}
+	// Create API client
+	client, err := api.NewClient(
+		cfg.Hyundai.Region,
+		cfg.Hyundai.Brand,
+		cfg.Hyundai.Username,
+		cfg.Hyundai.Password,
+		cfg.Hyundai.PIN,
+		cfg.Hyundai.RefreshToken,
+	)
+	if err != nil {
+		return ValidationResult{
+			Component: "Hyundai API - Client",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Failed to create client: %v", err),
+			Duration:  time.Since(start),
 		}
 	}
 
-	// Validate Discord
-	if cfg.Webhooks.Discord.Enabled {
-		start := time.Now()
-		if verbose {
-			fmt.Printf("  Testing Discord webhook...\n")
-		}
+	if verbose {
+		fmt.Printf("  ✓ Client created\n")
+		fmt.Printf("  Fetching vehicle list...\n")
+	}
 
-		if cfg.Webhooks.Discord.WebhookURL == "" {
-			results = append(results, ValidationResult{
-				Component: "Webhook - Discord",
-				Status:    "fail",
-				Message:   "Webhook URL is required",
-				Duration:  time.Since(start),
-			})
-		} else {
-			webhookConfig := webhook.Config{
-				Enabled: true,
-				Discord: webhook.DiscordConfig{
-					Enabled:    cfg.Webhooks.Discord.Enabled,
-					WebhookURL: cfg.Webhooks.Discord.WebhookURL,
-					Username:   cfg.Webhooks.Discord.Username,
-					AvatarURL:  cfg.Webhooks.Discord.AvatarURL,
-				},
-			}
-
-			notifier := webhook.New(webhookConfig)
-			if err := notifier.TestConnection(ctx); err != nil {
-				results = append(results, ValidationResult{
-					Component: "Webhook - Discord",
-					Status:    "fail",
-					Message:   fmt.Sprintf("Test failed: %v", err),
-					Duration:  time.Since(start),
-				})
-			} else {
-				results = append(results, ValidationResult{
-					Component: "Webhook - Discord",
-					Status:    "pass",
-					Message:   "Test notification sent successfully",
-					Duration:  time.Since(start),
-				})
-			}
+	// Try to fetch vehicles
+	vehicles, err := client.GetVehicles()
+	if err != nil {
+		return ValidationResult{
+			Component: "Hyundai API - Vehicles",
+			Status:    "fail",
+			Message:   fmt.Sprintf("Failed to fetch vehicles: %v", err),
+			Duration:  time.Since(start),
 		}
 	}
 
-	// Validate Generic webhooks
-	for i, generic := range cfg.Webhooks.Generic {
-		start := time.Now()
-		name := generic.Name
-		if name == "" {
-			name = fmt.Sprintf("Generic #%d", i+1)
-		}
+	// Check which field has vehicles
+	vehicleList := vehicles.Vehicles
+	if len(vehicleList) == 0 && len(vehicles.Result) > 0 {
+		vehicleList = vehicles.Result
+	}
 
-		if verbose {
-			fmt.Printf("  Testing %s webhook...\n", name)
-		}
-
-		if generic.URL == "" {
-			results = append(results, ValidationResult{
-				Component: fmt.Sprintf("Webhook - %s", name),
-				Status:    "fail",
-				Message:   "Webhook URL is required",
-				Duration:  time.Since(start),
-			})
-			continue
-		}
-
-		webhookConfig := webhook.Config{
-			Enabled: true,
-			Generic: []webhook.GenericConfig{
-				{
-					Name:    generic.Name,
-					URL:     generic.URL,
-					Method:  generic.Method,
-					Headers: generic.Headers,
-				},
-			},
-		}
-
-		notifier := webhook.New(webhookConfig)
-		if err := notifier.TestConnection(ctx); err != nil {
-			results = append(results, ValidationResult{
-				Component: fmt.Sprintf("Webhook - %s", name),
-				Status:    "fail",
-				Message:   fmt.Sprintf("Test failed: %v", err),
-				Duration:  time.Since(start),
-			})
-		} else {
-			results = append(results, ValidationResult{
-				Component: fmt.Sprintf("Webhook - %s", name),
-				Status:    "pass",
-				Message:   "Test notification sent successfully",
-				Duration:  time.Since(start),
-			})
+	if len(vehicleList) == 0 {
+		return ValidationResult{
+			Component: "Hyundai API",
+			Status:    "warn",
+			Message:   "No vehicles found in account",
+			Duration:  time.Since(start),
 		}
 	}
 
-	return results
+	if verbose {
+		fmt.Printf("  ✓ Found %d vehicle(s)\n", len(vehicleList))
+		for _, v := range vehicleList {
+			fmt.Printf("    - %s (%s)\n", v.Nickname, v.VIN)
+		}
+	}
+
+	return ValidationResult{
+		Component: "Hyundai API",
+		Status:    "pass",
+		Message:   fmt.Sprintf("Connected successfully, found %d vehicle(s)", len(vehicleList)),
+		Duration:  time.Since(start),
+	}
 }
 
 func printResult(result ValidationResult) {
@@ -573,5 +467,6 @@ func isTerminal() bool {
 }
 
 func disableColors() {
-	*(*string)(nil) = ""
+	// Colors are already const, this is a placeholder
+	// In production code, you'd reassign the color variables
 }
