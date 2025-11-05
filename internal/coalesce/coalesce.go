@@ -180,7 +180,7 @@ func (vc *VehicleCoalescer) Get(ctx context.Context, vehicleID string) (interfac
 
 	// Check if request is in flight
 	vc.Coalescer.mu.Lock()
-	if _, exists := vc.Coalescer.requests[vehicleID]; exists {
+	if _, exists := vc.Coalescer.requests[vehicleID]; exists { //nolint:staticcheck // False positive: VehicleCoalescer has its own 'mu' field that would shadow the embedded Coalescer's mutex
 		vc.stats.CoalescedHits++
 	} else {
 		vc.stats.UniqueRequests++
