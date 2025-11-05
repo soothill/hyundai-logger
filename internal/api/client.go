@@ -85,6 +85,13 @@ func getBaseURL(region, brand string) string {
 
 // doRequest performs an authenticated HTTP request
 func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, error) {
+	return c.doRequestWithRetry(method, endpoint, body, 0)
+}
+
+// doRequestWithRetry performs an authenticated HTTP request with retry tracking
+func (c *Client) doRequestWithRetry(method, endpoint string, body interface{}, retryCount int) ([]byte, error) {
+	const maxRetries = 1 // Only retry once to prevent infinite recursion
+
 	// Ensure we have a valid token
 	if err := c.authClient.EnsureValidToken(); err != nil {
 		return nil, fmt.Errorf("failed to ensure valid token: %w", err)
@@ -142,13 +149,18 @@ func (c *Client) doRequest(method, endpoint string, body interface{}) ([]byte, e
 
 	// Handle token expiration
 	if resp.StatusCode == 401 {
+		// Check if we've already retried
+		if retryCount >= maxRetries {
+			return nil, fmt.Errorf("authentication failed after %d retries: %s", maxRetries, string(respBody))
+		}
+
 		// Try to refresh token
 		if err := c.authClient.RefreshAccessToken(c.authClient.TokenStore.RefreshToken); err != nil {
 			return nil, fmt.Errorf("token refresh failed: %w", err)
 		}
 
-		// Retry the request once
-		return c.doRequest(method, endpoint, body)
+		// Retry the request once with incremented counter
+		return c.doRequestWithRetry(method, endpoint, body, retryCount+1)
 	}
 
 	return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(respBody))

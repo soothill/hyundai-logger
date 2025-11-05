@@ -95,16 +95,18 @@ func main() {
 
 // VehicleLogger handles the main logging loop
 type VehicleLogger struct {
-	config    *config.Config
-	apiClient *api.Client
-	dbClient  *database.Client
-	verbose   bool
-	stopChan  chan bool
+	config          *config.Config
+	apiClient       *api.Client
+	dbClient        *database.Client
+	verbose         bool
+	stopChan        chan bool
+	chargingVehicles map[string]bool // Track which vehicles are currently charging
 }
 
 // Run starts the logging loop
 func (vl *VehicleLogger) Run() {
 	vl.stopChan = make(chan bool)
+	vl.chargingVehicles = make(map[string]bool)
 
 	// Initial delay to prevent immediate polling on startup
 	time.Sleep(30 * time.Second)
@@ -145,10 +147,14 @@ func (vl *VehicleLogger) Run() {
 				}
 			}
 
-			// Wait for next poll interval
-			interval := vl.config.GetPollInterval()
+			// Determine next poll interval based on charging status
+			interval := vl.getNextPollInterval()
 			if vl.verbose {
-				fmt.Printf("Waiting %v until next poll...\n", interval)
+				if len(vl.chargingVehicles) > 0 {
+					fmt.Printf("Vehicle(s) charging - using faster interval: %v\n", interval)
+				} else {
+					fmt.Printf("Waiting %v until next poll...\n", interval)
+				}
 			}
 
 			select {
@@ -206,14 +212,16 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 		}
 	}
 
-	// Determine if we should use faster polling (for EV charging)
-	if vl.shouldUseFastPolling(status) {
-		// Override the next poll interval
-		if vl.verbose {
-			fmt.Println("EV is charging - using faster poll interval")
+	// Update charging status for this vehicle
+	isCharging := vl.shouldUseFastPolling(status)
+	vl.chargingVehicles[vehicle.VIN] = isCharging
+
+	if isCharging && vl.verbose {
+		chargingPower := 0.0
+		if status.EVStatus != nil {
+			chargingPower = status.EVStatus.ChargingPower
 		}
-		// This would require modifying the poll loop to check charging status
-		// For now, just log it
+		fmt.Printf("EV is charging at %.1f kW - faster polling enabled\n", chargingPower)
 	}
 
 	// Log the data to InfluxDB
@@ -228,6 +236,22 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 	return nil
 }
 
+// getNextPollInterval determines the appropriate poll interval based on charging status
+func (vl *VehicleLogger) getNextPollInterval() time.Duration {
+	// If any vehicle is charging, use faster polling
+	if len(vl.chargingVehicles) > 0 {
+		for _, isCharging := range vl.chargingVehicles {
+			if isCharging {
+				// Use charging interval from config
+				return time.Duration(vl.config.ChargingMode.IntervalMinutes) * time.Minute
+			}
+		}
+	}
+
+	// Default to configured poll interval
+	return vl.config.GetPollInterval()
+}
+
 // shouldUseFastPolling checks if we should use faster polling (e.g., during EV charging)
 func (vl *VehicleLogger) shouldUseFastPolling(status *api.VehicleStatus) bool {
 	if !vl.config.ChargingMode.Enabled {
@@ -235,12 +259,7 @@ func (vl *VehicleLogger) shouldUseFastPolling(status *api.VehicleStatus) bool {
 	}
 
 	if status.EVStatus != nil && status.EVStatus.BatteryCharge {
-		// Check charging power to determine polling rate
-		if status.EVStatus.ChargingPower > vl.config.ChargingMode.FastChargeThresholdKW {
-			// Fast charging - use fastest polling
-			return true
-		}
-		// Normal charging
+		// Vehicle is actively charging
 		return true
 	}
 

@@ -255,8 +255,9 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 		timestamp)
 	c.writeAPI.WritePoint(p)
 
-	// Flush writes
-	c.writeAPI.Flush()
+	// Note: Flush is handled automatically by the InfluxDB client based on
+	// BatchSize and FlushInterval configuration. Manual flush removed to
+	// improve performance and allow proper batching.
 
 	return nil
 }
