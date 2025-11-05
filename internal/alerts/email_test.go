@@ -607,8 +607,8 @@ func TestSendEmail_CorrectHeaders(t *testing.T) {
 
 func TestConfig_DefaultValues(t *testing.T) {
 	config := Config{
-		Enabled:      true,
-		AlertThreshold: 0,
+		Enabled:           true,
+		AlertThreshold:    0,
 		AlertCooldownMins: 0,
 	}
 

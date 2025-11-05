@@ -134,11 +134,11 @@ func TestNewClient(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -167,11 +167,11 @@ func TestNewClient_ConnectionFailed(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -190,11 +190,11 @@ func TestNewClient_ConnectionFailed(t *testing.T) {
 
 func TestNewClient_InvalidURL(t *testing.T) {
 	cfg := config.DatabaseConfig{
-		URL:          "http://localhost:1", // Port 1 should not be accessible
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           "http://localhost:1", // Port 1 should not be accessible
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -212,11 +212,11 @@ func TestClient_Close(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -244,11 +244,11 @@ func TestClient_HealthCheck(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -270,11 +270,11 @@ func TestClient_HealthCheck_WithTimeout(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -298,11 +298,11 @@ func TestClient_InitializeSchema(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -323,11 +323,11 @@ func TestClient_InitializeSchema_CreatesBucket(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "nonexistent",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "nonexistent",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -350,11 +350,11 @@ func TestClient_WriteVehicleStatus(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -433,11 +433,11 @@ func TestClient_WriteVehicleStatus_WithEVStatus(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -513,11 +513,11 @@ func TestClient_WriteVehicleStatus_WithoutLocation(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -562,11 +562,11 @@ func TestClient_QueryLatestStatus(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -596,11 +596,11 @@ func TestClient_QueryLatestStatus_InvalidVIN(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -626,11 +626,11 @@ func TestClient_GetBatteryHistory(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -658,11 +658,11 @@ func TestClient_GetBatteryHistory_MultipleHours(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -693,11 +693,11 @@ func TestClient_WriteMultipleVehicles(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    10,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     10,
 		FlushInterval: 1,
 	}
 
@@ -873,11 +873,11 @@ func TestClient_MileageConversion(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
@@ -926,11 +926,11 @@ func TestClient_AllMeasurements(t *testing.T) {
 	defer server.Close()
 
 	cfg := config.DatabaseConfig{
-		URL:          server.URL,
-		Token:        "test-token",
-		Organization: "test-org",
-		Bucket:       "test-bucket",
-		BatchSize:    100,
+		URL:           server.URL,
+		Token:         "test-token",
+		Organization:  "test-org",
+		Bucket:        "test-bucket",
+		BatchSize:     100,
 		FlushInterval: 10,
 	}
 
