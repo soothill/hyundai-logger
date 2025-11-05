@@ -72,9 +72,14 @@ func (sm *StampManager) fetchRemoteStamp() (*Stamp, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch stamp: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
+		// Close the first response before opening the second one
+		_ = resp.Body.Close()
+
 		// Try alternative stamp source
 		alternativeURL := fmt.Sprintf("https://raw.githubusercontent.com/Hacksore/bluelinky-stamps/master/%s.json",
 			sm.brand)
@@ -83,7 +88,6 @@ func (sm *StampManager) fetchRemoteStamp() (*Stamp, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch stamp from alternative source: %w", err)
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("stamp service returned status %d", resp.StatusCode)

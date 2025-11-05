@@ -69,7 +69,9 @@ func (e *Exporter) Export(ctx context.Context, writer io.Writer, opts ExportOpti
 	if err != nil {
 		return fmt.Errorf("executing query: %w", err)
 	}
-	defer result.Close()
+	defer func() {
+		_ = result.Close()
+	}()
 
 	// Collect data points
 	dataPoints, err := e.collectDataPoints(result, opts)

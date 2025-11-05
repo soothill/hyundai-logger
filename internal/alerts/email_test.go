@@ -44,10 +44,21 @@ func newMockSMTPServer(t *testing.T) *mockSMTPServer {
 }
 
 func (s *mockSMTPServer) serve() {
-	for s.started {
+	for {
+		s.mu.Lock()
+		started := s.started
+		s.mu.Unlock()
+
+		if !started {
+			return
+		}
+
 		conn, err := s.listener.Accept()
 		if err != nil {
-			if s.started {
+			s.mu.Lock()
+			started = s.started
+			s.mu.Unlock()
+			if started {
 				continue
 			}
 			return
@@ -57,7 +68,9 @@ func (s *mockSMTPServer) serve() {
 }
 
 func (s *mockSMTPServer) handleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	s.mu.Lock()
 	fail := s.failNext
@@ -65,12 +78,12 @@ func (s *mockSMTPServer) handleConnection(conn net.Conn) {
 	s.mu.Unlock()
 
 	if fail {
-		conn.Write([]byte("500 Error\r\n"))
+		_, _ = conn.Write([]byte("500 Error\r\n"))
 		return
 	}
 
 	// Simple SMTP handshake
-	conn.Write([]byte("220 localhost SMTP mock\r\n"))
+	_, _ = conn.Write([]byte("220 localhost SMTP mock\r\n"))
 
 	buf := make([]byte, 4096)
 	mailData := ""
@@ -85,20 +98,20 @@ func (s *mockSMTPServer) handleConnection(conn net.Conn) {
 		mailData += line
 
 		if strings.HasPrefix(line, "EHLO") || strings.HasPrefix(line, "HELO") {
-			conn.Write([]byte("250 Hello\r\n"))
+			_, _ = conn.Write([]byte("250 Hello\r\n"))
 		} else if strings.HasPrefix(line, "AUTH") {
-			conn.Write([]byte("235 Authentication successful\r\n"))
+			_, _ = conn.Write([]byte("235 Authentication successful\r\n"))
 		} else if strings.HasPrefix(line, "MAIL FROM") {
-			conn.Write([]byte("250 OK\r\n"))
+			_, _ = conn.Write([]byte("250 OK\r\n"))
 		} else if strings.HasPrefix(line, "RCPT TO") {
-			conn.Write([]byte("250 OK\r\n"))
+			_, _ = conn.Write([]byte("250 OK\r\n"))
 		} else if strings.HasPrefix(line, "DATA") {
-			conn.Write([]byte("354 Start mail input\r\n"))
+			_, _ = conn.Write([]byte("354 Start mail input\r\n"))
 		} else if strings.HasPrefix(line, "QUIT") {
-			conn.Write([]byte("221 Bye\r\n"))
+			_, _ = conn.Write([]byte("221 Bye\r\n"))
 			break
 		} else if strings.Contains(line, "\r\n.\r\n") {
-			conn.Write([]byte("250 OK\r\n"))
+			_, _ = conn.Write([]byte("250 OK\r\n"))
 			s.mu.Lock()
 			s.receivedMails = append(s.receivedMails, mailData)
 			s.mu.Unlock()
@@ -112,17 +125,11 @@ func (s *mockSMTPServer) getReceivedMails() []string {
 	return append([]string{}, s.receivedMails...)
 }
 
-func (s *mockSMTPServer) setFailNext() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.failNext = true
-}
-
 func (s *mockSMTPServer) close() {
 	s.mu.Lock()
 	s.started = false
 	s.mu.Unlock()
-	s.listener.Close()
+	_ = s.listener.Close()
 }
 
 func TestNewAlerter(t *testing.T) {
@@ -488,7 +495,7 @@ func TestAlerter_ThreadSafety(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			alerter.SendAlert("Test", "Body")
+			_ = alerter.SendAlert("Test", "Body")
 		}()
 	}
 
@@ -533,7 +540,7 @@ func TestEmailFormat(t *testing.T) {
 func parseAddr(addr string) (string, int) {
 	host, portStr, _ := net.SplitHostPort(addr)
 	port := 0
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 	return host, port
 }
 
@@ -633,7 +640,7 @@ func BenchmarkSendAlert_Cooldown(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		alerter.SendAlert("Test", "Body")
+		_ = alerter.SendAlert("Test", "Body")
 	}
 }
 

@@ -27,7 +27,7 @@ func mockInfluxDBServer() *httptest.Server {
 		if path == "/health" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"status": "pass", "message": "ready for queries and writes"}`))
+			_, _ = w.Write([]byte(`{"status": "pass", "message": "ready for queries and writes"}`))
 			return
 		}
 
@@ -48,9 +48,9 @@ func mockInfluxDBServer() *httptest.Server {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if strings.Contains(r.URL.RawQuery, "org=") {
-				w.Write([]byte(`{"orgs": [{"id": "org-id-123", "name": "test-org"}]}`))
+				_, _ = w.Write([]byte(`{"orgs": [{"id": "org-id-123", "name": "test-org"}]}`))
 			} else {
-				w.Write([]byte(`{"id": "org-id-123", "name": "test-org"}`))
+				_, _ = w.Write([]byte(`{"id": "org-id-123", "name": "test-org"}`))
 			}
 			return
 		}
@@ -817,7 +817,7 @@ func BenchmarkWriteVehicleStatus(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client.WriteVehicleStatus(vehicle, status)
+		_ = client.WriteVehicleStatus(vehicle, status)
 	}
 }
 
@@ -863,7 +863,7 @@ func BenchmarkWriteVehicleStatus_WithEV(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		client.WriteVehicleStatus(vehicle, status)
+		_ = client.WriteVehicleStatus(vehicle, status)
 	}
 }
 
