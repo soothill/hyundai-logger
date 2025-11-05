@@ -18,35 +18,30 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Check that CI workflow succeeded before proceeding
-  check-ci-success:
-    name: Check CI Status
-    runs-on: ubuntu-latest
-    # Skip this check for tag pushes and manual runs
-    if: github.event_name == 'workflow_run'
-    steps:
-      - name: Check CI workflow result
-        if: github.event.workflow_run.conclusion != 'success'
-        run: |
-          echo "CI workflow did not succeed. Docker build cancelled."
-          echo "CI status: ${{ github.event.workflow_run.conclusion }}"
-          exit 1
-
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    # Depend on CI check passing (or skip check for tags/manual runs)
-    needs: [check-ci-success]
+    # Only run if CI succeeded (for workflow_run) OR manual/tag trigger
     if: |
-      always() &&
-      (needs.check-ci-success.result == 'success' ||
-       needs.check-ci-success.result == 'skipped')
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     permissions:
       contents: read
       packages: write
       security-events: write
 
     steps:
+      - name: Check CI workflow result
+        if: github.event_name == 'workflow_run'
+        run: |
+          echo "CI workflow completed with status: ${{ github.event.workflow_run.conclusion }}"
+          if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+            echo "❌ CI workflow did not succeed. Docker build cancelled."
+            exit 1
+          fi
+          echo "✅ CI workflow succeeded. Proceeding with Docker build."
+
       - name: Checkout code
         uses: actions/checkout@v4
 
