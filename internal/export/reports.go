@@ -102,7 +102,9 @@ from(bucket: "%s")
 	if err != nil {
 		return fmt.Errorf("querying monthly data: %w", err)
 	}
-	defer result.Close()
+	defer func() {
+		_ = result.Close()
+	}()
 
 	// Aggregate statistics by VIN
 	vehicleStats := make(map[string]*VehicleStats)
@@ -222,7 +224,9 @@ from(bucket: "%s")
 	if err != nil {
 		return fmt.Errorf("querying mileage data: %w", err)
 	}
-	defer result.Close()
+	defer func() {
+		_ = result.Close()
+	}()
 
 	// Collect daily odometer readings
 	type DailyReading struct {

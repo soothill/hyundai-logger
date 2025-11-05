@@ -58,7 +58,7 @@ func New(cfg Config) (*Reloader, error) {
 	// Load initial configuration
 	initialConfig, err := config.LoadConfig(cfg.ConfigPath)
 	if err != nil {
-		watcher.Close()
+		_ = watcher.Close()
 		return nil, fmt.Errorf("loading initial config: %w", err)
 	}
 
@@ -73,7 +73,7 @@ func New(cfg Config) (*Reloader, error) {
 
 	// Watch the configuration file
 	if err := watcher.Add(cfg.ConfigPath); err != nil {
-		watcher.Close()
+		_ = watcher.Close()
 		return nil, fmt.Errorf("watching config file: %w", err)
 	}
 

@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -12,6 +13,28 @@ import (
 	"github.com/soothill/hyundai-logger/internal/api"
 	"github.com/soothill/hyundai-logger/internal/config"
 )
+
+// vinRegex validates VIN format (alphanumeric, typically 17 characters)
+var vinRegex = regexp.MustCompile(`^[A-HJ-NPR-Z0-9]{17}$`)
+
+// sanitizeVIN validates and sanitizes a VIN to prevent injection attacks
+func sanitizeVIN(vin string) string {
+	// VINs are 17 alphanumeric characters, excluding I, O, and Q
+	if vinRegex.MatchString(vin) {
+		return vin
+	}
+	// If exact match fails, allow alphanumeric only (for test/dev VINs)
+	if len(vin) > 0 && len(vin) <= 20 {
+		// Only allow alphanumeric characters
+		for _, c := range vin {
+			if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+				return "" // Invalid character found
+			}
+		}
+		return vin
+	}
+	return ""
+}
 
 // Client represents the InfluxDB client
 type Client struct {
@@ -255,8 +278,9 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 		timestamp)
 	c.writeAPI.WritePoint(p)
 
-	// Flush writes
-	c.writeAPI.Flush()
+	// Note: Flush is handled automatically by the InfluxDB client based on
+	// BatchSize and FlushInterval configuration. Manual flush removed to
+	// improve performance and allow proper batching.
 
 	return nil
 }
@@ -265,13 +289,20 @@ func (c *Client) WriteVehicleStatus(vehicle api.Vehicle, status *api.VehicleStat
 func (c *Client) QueryLatestStatus(vin string) (map[string]interface{}, error) {
 	queryAPI := c.client.QueryAPI(c.org)
 
+	// Sanitize VIN to prevent injection attacks
+	// VINs are alphanumeric, typically 17 characters
+	sanitizedVIN := sanitizeVIN(vin)
+	if sanitizedVIN == "" {
+		return nil, fmt.Errorf("invalid VIN format")
+	}
+
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
 			|> range(start: -1h)
 			|> filter(fn: (r) => r["vin"] == "%s")
 			|> filter(fn: (r) => r["_measurement"] == "vehicle_status")
 			|> last()
-	`, c.bucket, vin)
+	`, c.bucket, sanitizedVIN)
 
 	result, err := queryAPI.Query(context.Background(), query)
 	if err != nil {
@@ -284,12 +315,28 @@ func (c *Client) QueryLatestStatus(vin string) (map[string]interface{}, error) {
 		data[record.Field()] = record.Value()
 	}
 
+	// Check for query errors
+	if result.Err() != nil {
+		return nil, fmt.Errorf("query error: %w", result.Err())
+	}
+
 	return data, nil
 }
 
 // GetBatteryHistory retrieves battery level history for EV
 func (c *Client) GetBatteryHistory(vin string, hours int) ([]*write.Point, error) {
 	queryAPI := c.client.QueryAPI(c.org)
+
+	// Sanitize VIN to prevent injection attacks
+	sanitizedVIN := sanitizeVIN(vin)
+	if sanitizedVIN == "" {
+		return nil, fmt.Errorf("invalid VIN format")
+	}
+
+	// Validate hours parameter
+	if hours < 1 || hours > 8760 { // 1 hour to 1 year
+		return nil, fmt.Errorf("invalid hours: must be between 1 and 8760")
+	}
 
 	query := fmt.Sprintf(`
 		from(bucket: "%s")
@@ -298,7 +345,7 @@ func (c *Client) GetBatteryHistory(vin string, hours int) ([]*write.Point, error
 			|> filter(fn: (r) => r["_measurement"] == "vehicle_ev")
 			|> filter(fn: (r) => r["_field"] == "battery_level")
 			|> aggregateWindow(every: 10m, fn: mean, createEmpty: false)
-	`, c.bucket, hours, vin)
+	`, c.bucket, hours, sanitizedVIN)
 
 	result, err := queryAPI.Query(context.Background(), query)
 	if err != nil {
@@ -310,11 +357,16 @@ func (c *Client) GetBatteryHistory(vin string, hours int) ([]*write.Point, error
 		record := result.Record()
 		p := influxdb2.NewPoint(
 			"battery_history",
-			map[string]string{"vin": vin},
+			map[string]string{"vin": sanitizedVIN},
 			map[string]interface{}{"level": record.Value()},
 			record.Time(),
 		)
 		points = append(points, p)
+	}
+
+	// Check for query errors
+	if result.Err() != nil {
+		return nil, fmt.Errorf("query error: %w", result.Err())
 	}
 
 	return points, nil

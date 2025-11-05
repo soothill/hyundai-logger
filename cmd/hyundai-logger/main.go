@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -45,8 +46,8 @@ func main() {
 
 	// Initialize database schema if requested
 	if *initDB {
-		if err := db.InitializeSchema(); err != nil {
-			log.Fatalf("Failed to initialize database schema: %v", err)
+		if initErr := db.InitializeSchema(); initErr != nil {
+			log.Fatalf("Failed to initialize database schema: %v", initErr)
 		}
 		fmt.Println("Database schema initialized successfully")
 		os.Exit(0)
@@ -85,34 +86,75 @@ func main() {
 		cfg.Database.URL, cfg.Database.Organization, cfg.Database.Bucket)
 
 	// Run the logger
+	logger.wg.Add(1)
 	go logger.Run()
 
 	// Wait for shutdown signal
 	<-sigChan
 	fmt.Println("\nShutting down gracefully...")
 	logger.Stop()
+
+	// Wait for goroutine to finish
+	logger.wg.Wait()
+	fmt.Println("Shutdown complete")
 }
 
 // VehicleLogger handles the main logging loop
 type VehicleLogger struct {
-	config    *config.Config
-	apiClient *api.Client
-	dbClient  *database.Client
-	verbose   bool
-	stopChan  chan bool
+	config           *config.Config
+	apiClient        *api.Client
+	dbClient         *database.Client
+	verbose          bool
+	stopChan         chan bool
+	chargingVehicles map[string]bool // Track which vehicles are currently charging
+	chargingMu       sync.RWMutex    // Protects chargingVehicles map
+	wg               sync.WaitGroup  // Tracks running goroutines
 }
 
 // Run starts the logging loop
 func (vl *VehicleLogger) Run() {
+	defer vl.wg.Done()
+
+	// Panic recovery to prevent crashes
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("PANIC in polling loop: %v", r)
+		}
+	}()
+
 	vl.stopChan = make(chan bool)
+	vl.chargingVehicles = make(map[string]bool)
 
 	// Initial delay to prevent immediate polling on startup
 	time.Sleep(30 * time.Second)
 
-	// Get vehicles once at startup
-	vehicles, err := vl.apiClient.GetVehicles()
-	if err != nil {
-		log.Printf("Failed to get vehicles: %v", err)
+	// Get vehicles with retry logic
+	var vehicles *api.VehiclesResponse
+	var vehicleErr error
+	maxRetries := 3
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		vehicles, vehicleErr = vl.apiClient.GetVehicles()
+		if vehicleErr == nil {
+			break
+		}
+
+		log.Printf("Failed to get vehicles (attempt %d/%d): %v", attempt, maxRetries, vehicleErr)
+		if attempt < maxRetries {
+			// Exponential backoff: 5s, 10s, 20s
+			backoff := time.Duration(5*attempt) * time.Second
+			log.Printf("Retrying in %v...", backoff)
+
+			select {
+			case <-vl.stopChan:
+				return // Exit if stop requested during retry
+			case <-time.After(backoff):
+				// Continue to next retry
+			}
+		}
+	}
+
+	if vehicleErr != nil {
+		log.Printf("Failed to get vehicles after %d attempts, exiting: %v", maxRetries, vehicleErr)
 		return
 	}
 
@@ -145,10 +187,14 @@ func (vl *VehicleLogger) Run() {
 				}
 			}
 
-			// Wait for next poll interval
-			interval := vl.config.GetPollInterval()
+			// Determine next poll interval based on charging status
+			interval := vl.getNextPollInterval()
 			if vl.verbose {
-				fmt.Printf("Waiting %v until next poll...\n", interval)
+				if len(vl.chargingVehicles) > 0 {
+					fmt.Printf("Vehicle(s) charging - using faster interval: %v\n", interval)
+				} else {
+					fmt.Printf("Waiting %v until next poll...\n", interval)
+				}
 			}
 
 			select {
@@ -182,8 +228,8 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 			fmt.Println("Cached status failed, attempting refresh...")
 		}
 
-		if err := vl.apiClient.RefreshVehicleStatus(vehicle.VehicleID); err != nil {
-			return fmt.Errorf("failed to refresh status: %w", err)
+		if refreshErr := vl.apiClient.RefreshVehicleStatus(vehicle.VehicleID); refreshErr != nil {
+			return fmt.Errorf("failed to refresh status: %w", refreshErr)
 		}
 
 		// Wait a bit for the refresh to complete
@@ -206,14 +252,18 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 		}
 	}
 
-	// Determine if we should use faster polling (for EV charging)
-	if vl.shouldUseFastPolling(status) {
-		// Override the next poll interval
-		if vl.verbose {
-			fmt.Println("EV is charging - using faster poll interval")
+	// Update charging status for this vehicle (protected by mutex)
+	isCharging := vl.shouldUseFastPolling(status)
+	vl.chargingMu.Lock()
+	vl.chargingVehicles[vehicle.VIN] = isCharging
+	vl.chargingMu.Unlock()
+
+	if isCharging && vl.verbose {
+		chargingPower := 0.0
+		if status.EVStatus != nil {
+			chargingPower = status.EVStatus.ChargingPower
 		}
-		// This would require modifying the poll loop to check charging status
-		// For now, just log it
+		fmt.Printf("EV is charging at %.1f kW - faster polling enabled\n", chargingPower)
 	}
 
 	// Log the data to InfluxDB
@@ -228,6 +278,26 @@ func (vl *VehicleLogger) pollVehicle(vehicle api.Vehicle) error {
 	return nil
 }
 
+// getNextPollInterval determines the appropriate poll interval based on charging status
+func (vl *VehicleLogger) getNextPollInterval() time.Duration {
+	// Check charging status with read lock
+	vl.chargingMu.RLock()
+	defer vl.chargingMu.RUnlock()
+
+	// If any vehicle is charging, use faster polling
+	if len(vl.chargingVehicles) > 0 {
+		for _, isCharging := range vl.chargingVehicles {
+			if isCharging {
+				// Use charging interval from config
+				return time.Duration(vl.config.ChargingMode.IntervalMinutes) * time.Minute
+			}
+		}
+	}
+
+	// Default to configured poll interval
+	return vl.config.GetPollInterval()
+}
+
 // shouldUseFastPolling checks if we should use faster polling (e.g., during EV charging)
 func (vl *VehicleLogger) shouldUseFastPolling(status *api.VehicleStatus) bool {
 	if !vl.config.ChargingMode.Enabled {
@@ -235,12 +305,7 @@ func (vl *VehicleLogger) shouldUseFastPolling(status *api.VehicleStatus) bool {
 	}
 
 	if status.EVStatus != nil && status.EVStatus.BatteryCharge {
-		// Check charging power to determine polling rate
-		if status.EVStatus.ChargingPower > vl.config.ChargingMode.FastChargeThresholdKW {
-			// Fast charging - use fastest polling
-			return true
-		}
-		// Normal charging
+		// Vehicle is actively charging
 		return true
 	}
 
