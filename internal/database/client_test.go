@@ -91,22 +91,23 @@ func mockInfluxDBServer() *httptest.Server {
 			w.Header().Set("Content-Type", "application/csv")
 			w.WriteHeader(http.StatusOK)
 
-			// Return sample CSV data
+			// Return sample CSV data - must match InfluxDB CSV format exactly
+			// All numeric values to match the "double" datatype
 			csv := `#datatype,string,long,dateTime:RFC3339,dateTime:RFC3339,dateTime:RFC3339,string,string,string,double
 #group,false,false,true,true,false,true,true,true,false
-#default,_result,,,,,,,
+#default,_result,,,,,,,,
 ,result,table,_start,_stop,_time,_measurement,vin,_field,_value
-,,0,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_status,TEST123,engine,true
-,,0,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_status,TEST123,fuel_level,75.0
-,,1,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_ev,TEST123,battery_level,85.0
+,_result,0,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_status,TEST123,odometer,12345.5
+,_result,0,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_status,TEST123,fuel_level,75.0
+,_result,1,2025-01-01T00:00:00Z,2025-01-02T00:00:00Z,2025-01-01T12:00:00Z,vehicle_ev,TEST123,battery_level,85.0
 `
-			w.Write([]byte(csv))
+			_, _ = w.Write([]byte(csv))
 			return
 		}
 
 		// Default: Not Found
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error": "not found"}`))
+		_, _ = w.Write([]byte(`{"error": "not found"}`))
 	})
 
 	return httptest.NewServer(handler)

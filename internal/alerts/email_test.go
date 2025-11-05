@@ -82,7 +82,7 @@ func (s *mockSMTPServer) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// Simple SMTP handshake
+	// SMTP greeting
 	_, _ = conn.Write([]byte("220 localhost SMTP mock\r\n"))
 
 	buf := make([]byte, 4096)
@@ -97,7 +97,12 @@ func (s *mockSMTPServer) handleConnection(conn net.Conn) {
 		line := string(buf[:n])
 		mailData += line
 
-		if strings.HasPrefix(line, "EHLO") || strings.HasPrefix(line, "HELO") {
+		if strings.HasPrefix(line, "EHLO") {
+			// Multi-line EHLO response with AUTH support
+			_, _ = conn.Write([]byte("250-localhost\r\n"))
+			_, _ = conn.Write([]byte("250-AUTH PLAIN LOGIN\r\n"))
+			_, _ = conn.Write([]byte("250 OK\r\n"))
+		} else if strings.HasPrefix(line, "HELO") {
 			_, _ = conn.Write([]byte("250 Hello\r\n"))
 		} else if strings.HasPrefix(line, "AUTH") {
 			_, _ = conn.Write([]byte("235 Authentication successful\r\n"))
