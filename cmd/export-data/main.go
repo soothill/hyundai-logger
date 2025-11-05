@@ -112,7 +112,11 @@ func run() int {
 			fmt.Fprintf(os.Stderr, "Error creating output file: %v\n", err)
 			return exitError
 		}
-		defer outputWriter.Close()
+		defer func() {
+			if closeErr := outputWriter.Close(); closeErr != nil {
+				fmt.Fprintf(os.Stderr, "Error closing output file: %v\n", closeErr)
+			}
+		}()
 	}
 
 	// Execute requested report

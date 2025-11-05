@@ -148,7 +148,7 @@ func (l *Logger) log(level Level, format string, args ...interface{}) {
 	msg += fmt.Sprintf(format, args...)
 
 	// Write to output
-	fmt.Fprintln(l.output, msg)
+	_, _ = fmt.Fprintln(l.output, msg)
 }
 
 // colorizeLevel returns a colorized level string

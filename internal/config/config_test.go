@@ -24,15 +24,15 @@ func TestLoad_ValidConfig(t *testing.T) {
 	defer func() {
 		for k, v := range oldEnvVars {
 			if v != "" {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			} else {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			}
 		}
 	}()
 
 	for k := range oldEnvVars {
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 
 	// Create temporary config file
@@ -136,18 +136,18 @@ rate_limit:
 	}
 
 	// Set environment variables (only those supported by loadFromEnv)
-	os.Setenv("HYUNDAI_USERNAME", "envuser")
-	os.Setenv("HYUNDAI_PASSWORD", "envpass")
-	os.Setenv("INFLUXDB_URL", "http://env:8086")
-	os.Setenv("INFLUXDB_ORG", "envorg")
-	os.Setenv("INFLUXDB_BUCKET", "envbucket")
+	_ = os.Setenv("HYUNDAI_USERNAME", "envuser")
+	_ = os.Setenv("HYUNDAI_PASSWORD", "envpass")
+	_ = os.Setenv("INFLUXDB_URL", "http://env:8086")
+	_ = os.Setenv("INFLUXDB_ORG", "envorg")
+	_ = os.Setenv("INFLUXDB_BUCKET", "envbucket")
 
 	defer func() {
-		os.Unsetenv("HYUNDAI_USERNAME")
-		os.Unsetenv("HYUNDAI_PASSWORD")
-		os.Unsetenv("INFLUXDB_URL")
-		os.Unsetenv("INFLUXDB_ORG")
-		os.Unsetenv("INFLUXDB_BUCKET")
+		_ = os.Unsetenv("HYUNDAI_USERNAME")
+		_ = os.Unsetenv("HYUNDAI_PASSWORD")
+		_ = os.Unsetenv("INFLUXDB_URL")
+		_ = os.Unsetenv("INFLUXDB_ORG")
+		_ = os.Unsetenv("INFLUXDB_BUCKET")
 	}()
 
 	cfg, err := LoadConfig(configPath)

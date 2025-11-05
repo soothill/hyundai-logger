@@ -108,7 +108,7 @@ func (l *Logger) Debug(format string, v ...interface{}) {
 // Fatal logs an error message and exits
 func (l *Logger) Fatal(format string, v ...interface{}) {
 	l.zlog.Fatal().Msgf(format, v...)
-	l.Close()
+	_ = l.Close() // Ignore error since we're exiting
 	os.Exit(1)
 }
 

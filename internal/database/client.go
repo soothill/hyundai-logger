@@ -27,7 +27,7 @@ func sanitizeVIN(vin string) string {
 	if len(vin) > 0 && len(vin) <= 20 {
 		// Only allow alphanumeric characters
 		for _, c := range vin {
-			if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
 				return "" // Invalid character found
 			}
 		}

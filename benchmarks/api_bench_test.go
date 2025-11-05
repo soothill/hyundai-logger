@@ -190,7 +190,7 @@ func BenchmarkHTTPServerResponse(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 

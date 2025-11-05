@@ -65,7 +65,7 @@ func TestNew(t *testing.T) {
 				return
 			}
 			if err == nil {
-				defer logger.Close()
+				defer func() { _ = logger.Close() }()
 			}
 		})
 	}
@@ -89,7 +89,7 @@ func TestLogLevels(t *testing.T) {
 	logger.Info("info message: %s", "test")
 	logger.Error("error message: %s", "test")
 
-	logger.Close()
+	_ = logger.Close()
 
 	// Read log file
 	content, err := os.ReadFile(logFile)
@@ -128,7 +128,7 @@ func TestLogFiltering(t *testing.T) {
 	logger.Debug("debug message should be filtered")
 	logger.Info("info message should appear")
 
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -172,7 +172,7 @@ func TestStructuredLogging(t *testing.T) {
 	logger.LogAuthentication(true, "US")
 	logger.LogRateLimit(100)
 
-	logger.Close()
+	_ = logger.Close()
 
 	// Read and parse JSON log entries
 	content, err := os.ReadFile(logFile)
@@ -227,7 +227,7 @@ func TestLogStartup(t *testing.T) {
 	}
 
 	logger.LogStartup("1.2.3", "EU", "kia", 10)
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -268,7 +268,7 @@ func TestLogVehicleInfo(t *testing.T) {
 	}
 
 	logger.LogVehicleInfo(2024, "Kia", "EV6", "TESTVIN123")
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -308,7 +308,7 @@ func TestLogEVData(t *testing.T) {
 	}
 
 	logger.LogEVData("VIN456", 92.5, true)
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestLogLocation(t *testing.T) {
 	}
 
 	logger.LogLocation("VIN789", 51.5074, -0.1278)
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -383,7 +383,7 @@ func TestLogPollComplete(t *testing.T) {
 
 	duration := 3*time.Second + 500*time.Millisecond
 	logger.LogPollComplete(duration)
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -421,7 +421,7 @@ func TestWithContext(t *testing.T) {
 	})
 
 	ctxLogger.Info("test message with context")
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -456,7 +456,7 @@ func TestLogError(t *testing.T) {
 
 	testErr := errors.New("test error occurred")
 	logger.LogError("database_write", testErr)
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
@@ -491,7 +491,7 @@ func TestLogFileCreation(t *testing.T) {
 	}
 
 	logger.Info("test message")
-	logger.Close()
+	_ = logger.Close()
 
 	// Verify file was created
 	if _, err := os.Stat(logFile); os.IsNotExist(err) {
@@ -535,7 +535,7 @@ func TestDefaultLogLevel(t *testing.T) {
 
 	logger.Debug("debug message")
 	logger.Info("info message")
-	logger.Close()
+	_ = logger.Close()
 
 	content, err := os.ReadFile(logFile)
 	if err != nil {
