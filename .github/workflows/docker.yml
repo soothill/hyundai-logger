@@ -18,29 +18,17 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Check that CI workflow succeeded before proceeding
-  check-ci-success:
-    name: Check CI Status
-    runs-on: ubuntu-latest
-    # Skip this check for tag pushes and manual runs
-    if: github.event_name == 'workflow_run'
-    steps:
-      - name: Check CI workflow result
-        if: github.event.workflow_run.conclusion != 'success'
-        run: |
-          echo "CI workflow did not succeed. Docker build cancelled."
-          echo "CI status: ${{ github.event.workflow_run.conclusion }}"
-          exit 1
-
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
-    # Depend on CI check passing (or skip check for tags/manual runs)
-    needs: [check-ci-success]
+    # Only run if:
+    # 1. Triggered by workflow_run AND CI succeeded, OR
+    # 2. Triggered by tag push, OR
+    # 3. Manually triggered
     if: |
-      always() &&
-      (needs.check-ci-success.result == 'success' ||
-       needs.check-ci-success.result == 'skipped')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
@@ -76,6 +64,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -87,10 +76,10 @@ jobs:
           platforms: linux/amd64,linux/arm64,linux/arm/v7
 
       - name: Scan image for vulnerabilities
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.build.outputs.digest != ''
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: 'sarif'
           output: 'trivy-results.sarif'
 
