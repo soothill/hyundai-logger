@@ -183,11 +183,14 @@ func (h *Handler) HTTPHandler() http.HandlerFunc {
 		response := h.Check(ctx)
 
 		// Set appropriate HTTP status code
-		statusCode := http.StatusOK
-		if response.Status == StatusDegraded {
+		var statusCode int
+		switch response.Status {
+		case StatusDegraded:
 			statusCode = http.StatusOK // Still return 200 for degraded
-		} else if response.Status == StatusUnhealthy {
+		case StatusUnhealthy:
 			statusCode = http.StatusServiceUnavailable
+		default:
+			statusCode = http.StatusOK
 		}
 
 		w.Header().Set("Content-Type", "application/json")

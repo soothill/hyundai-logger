@@ -62,20 +62,20 @@ func mockInfluxDBServer() *httptest.Server {
 			// Check if it's a search (GET) or create (POST)
 			if r.Method == http.MethodPost {
 				w.WriteHeader(http.StatusCreated)
-				w.Write([]byte(`{"id": "bucket-id-456", "name": "test-bucket", "orgID": "org-id-123", "retentionRules": [{"everySeconds": 7776000}]}`))
+				_, _ = w.Write([]byte(`{"id": "bucket-id-456", "name": "test-bucket", "orgID": "org-id-123", "retentionRules": [{"everySeconds": 7776000}]}`))
 				return
 			}
 
 			// GET - return existing bucket or 404
 			if strings.Contains(r.URL.RawQuery, "name=test-bucket") {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"buckets": [{"id": "bucket-id-456", "name": "test-bucket", "orgID": "org-id-123"}]}`))
+				_, _ = w.Write([]byte(`{"buckets": [{"id": "bucket-id-456", "name": "test-bucket", "orgID": "org-id-123"}]}`))
 			} else if strings.Contains(r.URL.RawQuery, "name=nonexistent") {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"buckets": []}`))
+				_, _ = w.Write([]byte(`{"buckets": []}`))
 			} else {
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte(`{"buckets": [{"id": "bucket-id-456", "name": "test-bucket"}]}`))
+				_, _ = w.Write([]byte(`{"buckets": [{"id": "bucket-id-456", "name": "test-bucket"}]}`))
 			}
 			return
 		}
@@ -119,11 +119,11 @@ func mockFailingInfluxDBServer() *httptest.Server {
 		if r.URL.Path == "/health" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status": "fail", "message": "server unavailable"}`))
+			_, _ = w.Write([]byte(`{"status": "fail", "message": "server unavailable"}`))
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error": "internal server error"}`))
+		_, _ = w.Write([]byte(`{"error": "internal server error"}`))
 	})
 
 	return httptest.NewServer(handler)

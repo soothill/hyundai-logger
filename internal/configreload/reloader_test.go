@@ -147,15 +147,15 @@ func TestNew(t *testing.T) {
 	defer func() {
 		for k, v := range oldEnvVars {
 			if v != "" {
-				os.Setenv(k, v)
+				_ = os.Setenv(k, v)
 			} else {
-				os.Unsetenv(k)
+				_ = os.Unsetenv(k)
 			}
 		}
 	}()
 
 	for k := range oldEnvVars {
-		os.Unsetenv(k)
+		_ = os.Unsetenv(k)
 	}
 
 	configPath := createTempConfig(t, testConfigV1)
@@ -169,7 +169,9 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	defer reloader.Close()
+	defer func() {
+		_ = reloader.Close()
+	}()
 
 	if reloader == nil {
 		t.Fatal("expected reloader, got nil")
@@ -209,7 +211,7 @@ func TestGetConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	cfg1 := reloader.GetConfig()
 	cfg2 := reloader.GetConfig()
@@ -231,7 +233,7 @@ func TestOnReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	callCount := 0
 	reloader.OnReload(func(old, new *config.Config) error {
@@ -255,7 +257,7 @@ func TestForceReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	oldConfig := reloader.GetConfig()
 
@@ -292,7 +294,7 @@ func TestForceReload_WithHook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	hookCalled := false
 	var capturedOld, capturedNew *config.Config
@@ -338,7 +340,7 @@ func TestForceReload_HookError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	oldConfig := reloader.GetConfig()
 
@@ -380,7 +382,7 @@ func TestAutoReload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -431,7 +433,7 @@ func TestDebounce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	reloadCount := 0
 	reloader.OnReload(func(old, new *config.Config) error {
@@ -476,7 +478,7 @@ func TestGetStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reloader.Close()
+	defer func() { _ = reloader.Close() }()
 
 	reloader.OnReload(func(old, new *config.Config) error {
 		return nil

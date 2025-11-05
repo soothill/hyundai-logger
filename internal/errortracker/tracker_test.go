@@ -112,7 +112,7 @@ func TestTracker_GetStats(t *testing.T) {
 	tracker := New(5)
 
 	// Initial state
-	consecutiveErrors, lastErr, _, _ := tracker.GetStats()
+	consecutiveErrors, _, _, lastErr := tracker.GetStats()
 	if consecutiveErrors != 0 {
 		t.Errorf("expected 0 initial errors, got %d", consecutiveErrors)
 	}
@@ -127,7 +127,7 @@ func TestTracker_GetStats(t *testing.T) {
 	afterError := time.Now()
 
 	var errorTime time.Time
-	consecutiveErrors, lastErr, _, errorTime = tracker.GetStats()
+	consecutiveErrors, _, errorTime, lastErr = tracker.GetStats()
 	if consecutiveErrors != 1 {
 		t.Errorf("expected 1 consecutive error, got %d", consecutiveErrors)
 	}
@@ -144,7 +144,7 @@ func TestTracker_GetStats(t *testing.T) {
 	afterSuccess := time.Now()
 
 	var lastSuccess time.Time
-	consecutiveErrors, _, lastSuccess, _ = tracker.GetStats()
+	consecutiveErrors, lastSuccess, _, _ = tracker.GetStats()
 	if consecutiveErrors != 0 {
 		t.Errorf("expected 0 errors after success, got %d", consecutiveErrors)
 	}
@@ -169,7 +169,7 @@ func TestTracker_Reset(t *testing.T) {
 	tracker.Reset()
 
 	// Verify state after reset
-	consecutiveErrors, lastErr, _, errorTime := tracker.GetStats()
+	consecutiveErrors, _, errorTime, lastErr := tracker.GetStats()
 	if consecutiveErrors != 0 {
 		t.Errorf("expected 0 errors after reset, got %d", consecutiveErrors)
 	}

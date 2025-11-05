@@ -59,11 +59,11 @@ func (t *Tracker) RecordSuccess() (wasRecovery bool) {
 }
 
 // GetStats returns current error tracking statistics (thread-safe)
-func (t *Tracker) GetStats() (consecutiveErrors int, lastErr error, lastSuccess time.Time, errorTime time.Time) {
+func (t *Tracker) GetStats() (consecutiveErrors int, lastSuccess time.Time, errorTime time.Time, lastErr error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return t.consecutiveErrors, t.lastError, t.lastSuccessTime, t.lastErrorTime
+	return t.consecutiveErrors, t.lastSuccessTime, t.lastErrorTime, t.lastError
 }
 
 // GetConsecutiveErrors returns the number of consecutive errors (thread-safe)

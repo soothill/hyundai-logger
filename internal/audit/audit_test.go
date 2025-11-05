@@ -35,7 +35,7 @@ func TestNewLogger(t *testing.T) {
 		t.Fatalf("failed to create file logger: %v", err)
 	}
 
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	if logger == nil {
 		t.Fatal("expected logger, got nil")
@@ -435,7 +435,7 @@ func TestFileLogging(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create file logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Log multiple events
 	for i := 0; i < 5; i++ {
@@ -446,7 +446,7 @@ func TestFileLogging(t *testing.T) {
 	}
 
 	// Close to flush
-	logger.Close()
+	_ = logger.Close()
 
 	// Read file
 	data, err := os.ReadFile(logPath)
