@@ -35,7 +35,7 @@ This document describes the CI/CD pipeline and workflow dependencies.
 │               Docker Build Workflow                      │
 │  (Triggers only after CI workflow completes)            │
 │                                                          │
-│  1. Check CI Status (must be success)                   │
+│  1. Verify CI succeeded (skip for manual/tag triggers)  │
 │  2. Build Docker Image (multi-platform)                 │
 │  3. Push to GitHub Container Registry                   │
 │  4. Scan image with Trivy                               │
@@ -65,13 +65,15 @@ This document describes the CI/CD pipeline and workflow dependencies.
 - `push` to version tags (`v*`)
 
 **Jobs:**
-1. **check-ci-success** - Verifies CI workflow succeeded
-2. **build-and-push** - Builds and pushes Docker images (needs: check-ci-success)
+1. **build-and-push** - Builds and pushes Docker images
+   - First step verifies CI succeeded (for workflow_run triggers)
+   - Then builds multi-platform images
+   - Pushes to registry and scans for vulnerabilities
 
 **Protection:** Docker build only proceeds if:
 - CI workflow completed successfully (for workflow_run trigger)
-- OR manually triggered (workflow_dispatch)
-- OR version tag push
+- OR manually triggered (workflow_dispatch) - bypasses CI check
+- OR version tag push - bypasses CI check
 
 ## Dependency Chain
 
