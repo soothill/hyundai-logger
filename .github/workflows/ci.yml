@@ -90,6 +90,8 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    # Only run after lint and test pass
+    needs: [lint, test]
     permissions:
       contents: read
       security-events: write

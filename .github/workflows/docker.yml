@@ -1,20 +1,46 @@
 name: Docker Build and Publish
 
 on:
+  # Only run after CI workflow completes successfully
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+    branches: [ main ]
+  # Also allow manual trigger
+  workflow_dispatch:
+  # Run on version tags
   push:
-    branches: [ main ]
     tags: [ 'v*' ]
-  pull_request:
-    branches: [ main ]
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
+  # Check that CI workflow succeeded before proceeding
+  check-ci-success:
+    name: Check CI Status
+    runs-on: ubuntu-latest
+    # Skip this check for tag pushes and manual runs
+    if: github.event_name == 'workflow_run'
+    steps:
+      - name: Check CI workflow result
+        if: github.event.workflow_run.conclusion != 'success'
+        run: |
+          echo "CI workflow did not succeed. Docker build cancelled."
+          echo "CI status: ${{ github.event.workflow_run.conclusion }}"
+          exit 1
+
   build-and-push:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    # Depend on CI check passing (or skip check for tags/manual runs)
+    needs: [check-ci-success]
+    if: |
+      always() &&
+      (needs.check-ci-success.result == 'success' ||
+       needs.check-ci-success.result == 'skipped')
     permissions:
       contents: read
       packages: write
