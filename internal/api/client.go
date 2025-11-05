@@ -125,9 +125,9 @@ func (c *Client) doRequestWithRetry(method, endpoint string, body interface{}, r
 
 	// Sign request with stamp for EU regions
 	if c.stampManager != nil {
-		if err := c.stampManager.SignRequest(req); err != nil {
+		if stampErr := c.stampManager.SignRequest(req); stampErr != nil {
 			// Log warning but continue - stamp might not be required for all endpoints
-			fmt.Printf("Warning: Failed to sign request with stamp: %v\n", err)
+			fmt.Printf("Warning: Failed to sign request with stamp: %v\n", stampErr)
 		}
 	}
 

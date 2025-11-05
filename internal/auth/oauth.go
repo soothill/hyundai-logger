@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -95,8 +96,8 @@ func SaveTokens(store *TokenStore) error {
 	}
 
 	configDir := filepath.Join(homeDir, ".hyundai-logger")
-	if err := os.MkdirAll(configDir, 0700); err != nil {
-		return err
+	if mkdirErr := os.MkdirAll(configDir, 0700); mkdirErr != nil {
+		return mkdirErr
 	}
 
 	tokenFile := filepath.Join(configDir, "tokens.json")
@@ -139,6 +140,7 @@ type OAuth2Client struct {
 	Password   string
 	PIN        string
 	httpClient *http.Client
+	mu         sync.RWMutex // Protects TokenStore from concurrent access
 }
 
 // NewOAuth2Client creates a new OAuth2 client
@@ -173,6 +175,10 @@ func (c *OAuth2Client) AuthenticateWithRefreshToken(refreshToken string) error {
 
 // RefreshAccessToken refreshes the access token using refresh token
 func (c *OAuth2Client) RefreshAccessToken(refreshToken string) error {
+	// Lock for the entire refresh operation to prevent concurrent refreshes
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	data := url.Values{}
 	data.Set("grant_type", "refresh_token")
 	data.Set("refresh_token", refreshToken)
@@ -240,6 +246,9 @@ func (c *OAuth2Client) RefreshAccessToken(refreshToken string) error {
 
 // IsTokenValid checks if the current token is still valid
 func (c *OAuth2Client) IsTokenValid() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.TokenStore == nil {
 		return false
 	}
@@ -259,6 +268,9 @@ func (c *OAuth2Client) EnsureValidToken() error {
 
 // GetAccessToken returns the current access token
 func (c *OAuth2Client) GetAccessToken() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.TokenStore != nil {
 		return c.TokenStore.AccessToken
 	}
@@ -267,6 +279,9 @@ func (c *OAuth2Client) GetAccessToken() string {
 
 // GetDeviceID returns the stored device ID
 func (c *OAuth2Client) GetDeviceID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
 	if c.TokenStore != nil {
 		return c.TokenStore.DeviceID
 	}
@@ -275,6 +290,9 @@ func (c *OAuth2Client) GetDeviceID() string {
 
 // SetDeviceID sets and saves the device ID
 func (c *OAuth2Client) SetDeviceID(deviceID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	if c.TokenStore == nil {
 		c.TokenStore = &TokenStore{}
 	}
